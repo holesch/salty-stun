@@ -41,15 +41,8 @@ int main(void) {
 
     static ALIGNED_BUFFER(request_buffer, 4096);
     static ALIGNED_BUFFER(response_buffer, 4096);
-    struct packet request = {
-        .head = request_buffer.bytes,
-        .len = sizeof(request_buffer.bytes),
-    };
-    struct packet response = {
-        .head = response_buffer.bytes,
-        .len = sizeof(response_buffer.bytes),
-    };
-
+    struct packet request;
+    struct packet response;
     struct sockaddr_in src_addr;
     ssize_t len = 0;
 
@@ -61,7 +54,12 @@ int main(void) {
             perror("recvfrom");
             return 1;
         }
+
+        request.head = request_buffer.bytes;
         request.len = len;
+        response.head = response_buffer.bytes;
+        response.len = 0;
+
         char ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &src_addr.sin_addr, ip, INET_ADDRSTRLEN);
         printf("received %ld bytes from %s:%d\n", len, ip, ntohs(src_addr.sin_port));

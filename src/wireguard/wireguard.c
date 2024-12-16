@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "inet/ip.h"
 #include "packet.h"
 #include "wireguard/aead.h"
 #include "wireguard/dh.h"
@@ -66,7 +67,6 @@ static int wireguard_handle_handshake(struct wireguard *wg,
         struct packet *request_bytes, struct packet *response_bytes);
 static int wireguard_handle_data(
         struct wireguard *wg, struct packet *request, struct packet *response);
-static void dump_bytes(const uint8_t *bytes, size_t len);
 
 // Label-Mac1
 //     The UTF-8 string literal “mac1----”, 8 bytes of output.
@@ -331,24 +331,44 @@ static int wireguard_handle_data(
         printf("error decrypting packet\n");
         return 1;
     }
-    packet_len -= AEAD_TAG_SIZE;
+    request->len -= AEAD_TAG_SIZE;
 
     // N send m := N send m + 1
     session->recv_counter++;
 
-    printf("received packet: ");
-    dump_bytes(req->packet, packet_len);
+    packet_shrink(request, sizeof(struct transport_data));
+    packet_reserve(response, sizeof(struct transport_data));
 
-    // TODO send response
-    response->len = 0;
-    return 0;
-}
-
-static void dump_bytes(const uint8_t *bytes, size_t len) {
-    for (size_t i = 0; i < len; i++) {
-        // printf("%02x", bytes[i]);
-        // printf("%d ", bytes[i]);
-        printf("0x%02x, ", bytes[i]);
+    err = ip_handle_request(request, response);
+    if (err) {
+        return 1;
     }
-    printf("\n");
+
+    packet_expand(response, sizeof(struct transport_data));
+    packet_expand(request, sizeof(struct transport_data));
+
+    struct transport_data *resp = (struct transport_data *)response->head;
+    resp->type = WG_TYPE_TRANSPORT;
+    memset(resp->reserved, 0, sizeof(resp->reserved));
+
+    // receiver := Im′
+    resp->receiver = session->remote_index;
+
+    // pad packet to multiple of 16 bytes
+    // P := P ‖0^16·⎡‖P‖/16⎤−‖P‖
+    packet_pad(response, sizeof(*resp));
+
+    // msg.counter := N send m
+    resp->counter = session->send_counter;
+
+    // msg.packet := Aead(T send m , N send m , P, ϵ)
+    packet_len = response->len - sizeof(*resp);
+    aead_encrypt(resp->packet, session->send_key, resp->counter, resp->packet,
+            packet_len, NULL, 0);
+    response->len += AEAD_TAG_SIZE;
+
+    // N send m := N send m + 1
+    session->send_counter++;
+
+    return 0;
 }
