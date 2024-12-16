@@ -1,0 +1,38 @@
+---
+Checks:
+  - '*'
+
+  # Not relevant
+  - '-altera*'
+  - '-llvmlibc-*'
+  - '-google-readability-todo'
+  - '-llvm-include-order'
+
+  # Too many false positives
+  - '-misc-include-cleaner'
+
+  # Broken: Suggests absolute paths.
+  - '-llvm-header-guard'
+
+  # This enforces usage of memcpy_s() and similar functions. Maybe later.
+  - '-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling'
+
+  # Implementation of this check is too strict.
+  # https://stackoverflow.com/a/58845898/5841556
+  - '-hicpp-signed-bitwise'
+CheckOptions:
+  bugprone-misplaced-widening-cast.CheckImplicitCasts: '1'
+  bugprone-suspicious-enum-usage.StrictMode: '1'
+  readability-identifier-naming.EnumCase: lower_case
+  readability-identifier-naming.EnumConstantCase: UPPER_CASE
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.StructCase: lower_case
+  readability-identifier-naming.TypedefCase: lower_case
+  readability-identifier-naming.UnionCase: lower_case
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.GlobalVariablePrefix: "g_"
+  readability-identifier-naming.GlobalConstantCase: UPPER_CASE
+  readability-identifier-length.MinimumVariableNameLength: 2
+  readability-identifier-length.MinimumParameterNameLength: 2
+WarningsAsErrors: '*'
