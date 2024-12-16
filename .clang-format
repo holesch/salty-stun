@@ -1,0 +1,30 @@
+BasedOnStyle: LLVM
+
+# Increase indentation from 2 to 4 spaces
+IndentWidth: 4
+ContinuationIndentWidth: 8
+ConstructorInitializerIndentWidth: 8
+
+# Disable vertical alignment
+AlignAfterOpenBracket: DontAlign
+AlignEscapedNewlines: DontAlign
+AlignOperands: false
+AlignTrailingComments: false
+
+# Include order
+IncludeBlocks: Regroup
+IncludeCategories:
+    - { Regex: '^<.*', Priority: 1 }
+    - { Regex: '.*', Priority: 2 }
+IncludeIsMainRegex: '(_test)?$'
+
+# Break lines, except long strings
+ColumnLimit: 88
+AlwaysBreakBeforeMultilineStrings: true
+BreakStringLiterals: false
+AllowShortFunctionsOnASingleLine: Empty
+
+# Spaces in initializers: "struct x = { 0 };"
+Cpp11BracedListStyle: false
+# No empty line after "if (x) {"
+KeepEmptyLinesAtTheStartOfBlocks: false
