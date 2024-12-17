@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "inet/ip.h"
+#include "log.h"
 #include "packet.h"
 #include "wireguard/aead.h"
 #include "wireguard/dh.h"
@@ -107,16 +108,21 @@ int wireguard_init(struct wireguard *wg, const uint8_t *private_key) {
 
 int wireguard_handle_request(
         struct wireguard *wg, struct packet *request, struct packet *response) {
+    if (request->len < sizeof(uint8_t)) {
+        log_warn("wireguard message is too short");
+        return 1;
+    }
+
     uint8_t type = request->head[0];
     switch (type) {
     case WG_TYPE_INITIATION:
-        printf("initiation\n");
+        log_debug("received initiation packet");
         return wireguard_handle_handshake(wg, request, response);
     case WG_TYPE_TRANSPORT:
-        printf("transport\n");
+        log_debug("received transport packet");
         return wireguard_handle_data(wg, request, response);
     default:
-        printf("unknown packet type: %d\n", type);
+        log_warn("unknown packet type: %d", type);
         return 1;
     }
 }
@@ -131,13 +137,18 @@ static int wireguard_handle_handshake(struct wireguard *wg,
     uint8_t encryption_key[AEAD_KEY_SIZE];
     struct handshake_request *req = (struct handshake_request *)request_bytes->head;
 
+    if (request_bytes->len < sizeof(*req)) {
+        log_warn("wireguard message is too short");
+        return 1;
+    }
+
     // msg.mac1 := Mac(Hash(Label-Mac1 ‖ Spub m′ ), msgα)
     uint8_t mac1[MAC_SIZE];
     size_t in_len = sizeof(*req) - sizeof(req->mac1) - sizeof(req->mac2);
     mac_calculate(mac1, request_bytes->head, in_len, wg->mac1_key);
 
     if (sodium_memcmp(mac1, req->mac1, sizeof(mac1)) != 0) {
-        printf("mac1 mismatch\n");
+        log_warn("mac1 mismatch");
         return 1;
     }
 
@@ -167,7 +178,7 @@ static int wireguard_handle_handshake(struct wireguard *wg,
     // here: (Ci, κ) := Kdf2(Ci, DH(Spriv r , Epub i ))
     int err = dh_shared_secret(shared_secret, wg->private_key, req->ephemeral);
     if (err) {
-        printf("error deriving shared secret\n");
+        log_warn("error deriving shared secret");
         return 1;
     }
     kdf_init(&kdf_state, chaining_key, shared_secret, sizeof(shared_secret));
@@ -179,7 +190,7 @@ static int wireguard_handle_handshake(struct wireguard *wg,
     err = aead_decrypt(remote_public_key, encryption_key, 0, req->static_tagged,
             sizeof(req->static_tagged), hash, sizeof(hash));
     if (err) {
-        printf("error decrypting remote public key\n");
+        log_warn("error decrypting remote public key");
         return 1;
     }
 
@@ -190,7 +201,7 @@ static int wireguard_handle_handshake(struct wireguard *wg,
     // here: (Ci, κ) := Kdf2(Ci, DH(Spriv r , Spub i ))
     err = dh_shared_secret(shared_secret, wg->private_key, remote_public_key);
     if (err) {
-        printf("error deriving shared secret\n");
+        log_warn("error deriving shared secret");
         return 1;
     }
     kdf_init(&kdf_state, chaining_key, shared_secret, sizeof(shared_secret));
@@ -202,7 +213,7 @@ static int wireguard_handle_handshake(struct wireguard *wg,
     aead_decrypt(timestamp, encryption_key, 0, req->timestamp_tagged,
             sizeof(req->timestamp_tagged), hash, sizeof(hash));
     if (err) {
-        printf("error decrypting timestamp\n");
+        log_warn("error decrypting timestamp");
         return 1;
     }
 
@@ -238,7 +249,7 @@ static int wireguard_handle_handshake(struct wireguard *wg,
     // Cr := Kdf1(Cr , DH(Epriv r , Epub i))
     err = dh_shared_secret(shared_secret, ephemeral_private_key, req->ephemeral);
     if (err) {
-        printf("error deriving shared secret from ephemeral\n");
+        log_warn("error deriving shared secret");
         return 1;
     }
     kdf_init(&kdf_state, chaining_key, shared_secret, sizeof(shared_secret));
@@ -247,7 +258,7 @@ static int wireguard_handle_handshake(struct wireguard *wg,
     // Cr := Kdf1(Cr , DH(Epriv r , Spub i))
     err = dh_shared_secret(shared_secret, ephemeral_private_key, remote_public_key);
     if (err) {
-        printf("error deriving shared secret from remote public key\n");
+        log_warn("error deriving shared secret");
         return 1;
     }
     kdf_init(&kdf_state, chaining_key, shared_secret, sizeof(shared_secret));
@@ -306,19 +317,24 @@ static int wireguard_handle_data(
     (void)wg;
     struct transport_data *req = (struct transport_data *)request->head;
 
+    if (request->len < sizeof(*req) + AEAD_TAG_SIZE) {
+        log_warn("wireguard message is too short");
+        return 1;
+    }
+
     // TODO support multiple sessions
     struct session *session = &g_sessions[0];
 
     // msg.receiver := Im′
     if (req->receiver != session->local_index) {
-        printf("receiver mismatch\n");
+        log_warn("receiver doesn't match any session");
         return 1;
     }
 
     // msg.counter := N send m
     // TODO sliding window
     if (req->counter != session->recv_counter) {
-        printf("counter mismatch: expected %lu, got %lu\n", session->recv_counter,
+        log_warn("counter mismatch: expected %lu, got %lu", session->recv_counter,
                 req->counter);
         // return 1;
     }
@@ -328,7 +344,7 @@ static int wireguard_handle_data(
     int err = aead_decrypt(req->packet, session->recv_key, req->counter, req->packet,
             packet_len, NULL, 0);
     if (err) {
-        printf("error decrypting packet\n");
+        log_warn("error decrypting packet");
         return 1;
     }
     request->len -= AEAD_TAG_SIZE;
@@ -338,6 +354,11 @@ static int wireguard_handle_data(
 
     packet_shrink(request, sizeof(struct transport_data));
     packet_reserve(response, sizeof(struct transport_data));
+
+    if (request->len == 0) {
+        log_debug("received keepalive packet");
+        return 1;
+    }
 
     err = ip_handle_request(request, response);
     if (err) {

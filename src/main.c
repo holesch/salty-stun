@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <sys/socket.h>
 
+#include "log.h"
 #include "packet.h"
 #include "wireguard/wireguard.h"
 
@@ -12,6 +13,7 @@ int main(void) {
     if (sodium_init() == -1) {
         return 1;
     }
+    log_init(LOG_DEBUG);
 
     struct wireguard wg;
     // yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=
@@ -23,7 +25,7 @@ int main(void) {
     // create UDP server
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
-        perror("socket");
+        log_errnum_error("socket");
         return 1;
     }
 
@@ -34,10 +36,10 @@ int main(void) {
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
     if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("bind");
+        log_errnum_error("bind");
         return 1;
     }
-    printf("Listening on port 51820\n");
+    log_info("Listening on port %d", port);
 
     static ALIGNED_BUFFER(request_buffer, 4096);
     static ALIGNED_BUFFER(response_buffer, 4096);
@@ -51,7 +53,7 @@ int main(void) {
         len = recvfrom(sockfd, request_buffer.bytes, sizeof(request_buffer), 0,
                 (struct sockaddr *)&src_addr, &src_addr_len);
         if (len < 0) {
-            perror("recvfrom");
+            log_errnum_error("recvfrom");
             return 1;
         }
 
@@ -62,16 +64,18 @@ int main(void) {
 
         char ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &src_addr.sin_addr, ip, INET_ADDRSTRLEN);
-        printf("received %ld bytes from %s:%d\n", len, ip, ntohs(src_addr.sin_port));
+        log_debug("received %zu bytes from %s:%d", request.len, ip,
+                ntohs(src_addr.sin_port));
 
         int err = wireguard_handle_request(&wg, &request, &response);
         if (!err) {
             if (response.len != 0) {
-                printf("sending response\n");
+                log_debug("sending %zu bytes to %s:%d", response.len, ip,
+                        ntohs(src_addr.sin_port));
                 len = sendto(sockfd, response_buffer.bytes, response.len, 0,
                         (struct sockaddr *)&src_addr, src_addr_len);
                 if (len < 0) {
-                    perror("sendto");
+                    log_errnum_error("sendto");
                 }
             }
         }

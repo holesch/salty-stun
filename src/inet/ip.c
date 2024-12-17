@@ -5,6 +5,7 @@
 
 #include "inet/checksum.h"
 #include "inet/icmp.h"
+#include "log.h"
 #include "packet.h"
 
 enum {
@@ -31,6 +32,7 @@ int ip_handle_request(struct packet *request, struct packet *response) {
     int err = 0;
 
     if (request->len < sizeof(struct ip_packet)) {
+        log_warn("IP packet is too short");
         return 1;
     }
 
@@ -38,20 +40,24 @@ int ip_handle_request(struct packet *request, struct packet *response) {
 
     size_t ihl = sizeof(*req) / sizeof(uint32_t);
     if (req->version_ihl != (IP_VERSION << 4 | ihl)) {
+        log_warn("IP version or IHL is incorrect: 0x%02x", req->version_ihl);
         return 1;
     }
 
     if (inet_checksum((void *)request->head, sizeof(struct ip_packet)) != 0) {
+        log_warn("IP checksum is incorrect");
         return 1;
     }
 
     int more_fragments = req->flags_fragment_offset & IP_MORE_FRAGMENTS_MASK;
     if (more_fragments) {
+        log_warn("Dropping fragmented IP packet");
         return 1;
     }
 
     size_t packet_len = be16toh(req->total_length);
     if (request->len < packet_len) {
+        log_warn("IP packet is too short");
         return 1;
     }
     request->len = packet_len;
@@ -66,6 +72,7 @@ int ip_handle_request(struct packet *request, struct packet *response) {
     //     return udp_handle_request(request, response);
     //     break;
     default:
+        log_warn("Unsupported IP protocol: %d", req->protocol);
         err = 1;
     }
 

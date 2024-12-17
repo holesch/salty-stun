@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "inet/checksum.h"
+#include "log.h"
 #include "packet.h"
 
 enum {
@@ -22,16 +23,20 @@ struct icmp_echo_packet {
 
 int icmp_handle_request(struct packet *request, struct packet *response) {
     if (request->len < sizeof(struct icmp_echo_packet)) {
+        log_warn("ICMP request too short");
         return 1;
     }
 
     struct icmp_echo_packet *req = (struct icmp_echo_packet *)request->head;
 
     if (req->type != ICMP_TYPE_ECHO_REQUEST || req->code != 0x00) {
+        log_warn("ICMP request type or code not supported: type=%d code=%d", req->type,
+                req->code);
         return 1;
     }
 
     if (inet_checksum((void *)req, request->len) != 0) {
+        log_warn("ICMP request checksum is incorrect");
         return 1;
     }
 
