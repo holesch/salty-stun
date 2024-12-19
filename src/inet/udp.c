@@ -23,20 +23,20 @@ struct udp_packet {
 int udp_handle_request(struct context *ctx) {
     int err = 0;
 
-    if (ctx->request.len < sizeof(struct udp_packet)) {
+    struct udp_packet *req = packet_pop_head(&ctx->request, sizeof(*req));
+    if (!req) {
         log_warn("UDP packet is too short");
         return 1;
     }
 
-    struct udp_packet *req = (struct udp_packet *)ctx->request.head;
-
-    if (ctx->request.len != be16toh(req->length)) {
-        log_warn("UDP length is incorrect: %u != %u", ctx->request.len,
+    size_t data_len = ctx->request.len;
+    size_t total_len = sizeof(*req) + data_len;
+    if (be16toh(req->length) != total_len) {
+        log_warn("UDP length is incorrect: expected %zu, got %u", total_len,
                 be16toh(req->length));
         return 1;
     }
 
-    packet_shrink(&ctx->request, sizeof(*req));
     packet_reserve(&ctx->response, sizeof(struct udp_packet));
 
     switch (be16toh(req->destination_port)) {
@@ -52,10 +52,7 @@ int udp_handle_request(struct context *ctx) {
         return 1;
     }
 
-    packet_expand(&ctx->response, sizeof(struct udp_packet));
-    packet_expand(&ctx->request, sizeof(*req));
-    struct udp_packet *resp = (struct udp_packet *)ctx->response.head;
-
+    struct udp_packet *resp = packet_push_head(&ctx->response, sizeof(*resp));
     resp->source_port = req->destination_port;
     resp->destination_port = req->source_port;
     resp->length = htobe16(ctx->response.len);

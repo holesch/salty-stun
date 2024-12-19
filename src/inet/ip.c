@@ -38,12 +38,11 @@ struct ip_packet {
 int ip_handle_request(struct context *ctx) {
     int err = 0;
 
-    if (ctx->request.len < sizeof(struct ip_packet)) {
+    struct ip_packet *req = packet_pop_head(&ctx->request, sizeof(struct ip_packet));
+    if (!req) {
         log_warn("IP packet is too short");
         return 1;
     }
-
-    struct ip_packet *req = (struct ip_packet *)ctx->request.head;
 
     size_t ihl = sizeof(*req) / sizeof(uint32_t);
     if (req->version_ihl != (IP_VERSION << 4 | ihl)) {
@@ -62,13 +61,15 @@ int ip_handle_request(struct context *ctx) {
         return 1;
     }
 
-    size_t packet_len = be16toh(req->total_length);
-    if (ctx->request.len < packet_len) {
+    size_t data_len = ctx->request.len;
+    size_t total_len = be16toh(req->total_length);
+    if (data_len + sizeof(*req) < total_len) {
         log_warn("IP packet is too short");
         return 1;
     }
-    ctx->request.len = packet_len;
-    packet_shrink(&ctx->request, sizeof(struct ip_packet));
+    // Wireguard adds padding. Remove it here.
+    packet_pop_tail(&ctx->request, (sizeof(*req) + data_len) - total_len);
+
     packet_reserve(&ctx->response, sizeof(struct ip_packet));
 
     switch (req->protocol) {
@@ -87,9 +88,7 @@ int ip_handle_request(struct context *ctx) {
         return 1;
     }
 
-    packet_expand(&ctx->response, sizeof(struct ip_packet));
-    packet_expand(&ctx->request, sizeof(struct ip_packet));
-    struct ip_packet *resp = (struct ip_packet *)ctx->response.head;
+    struct ip_packet *resp = packet_push_head(&ctx->response, sizeof(*resp));
 
     resp->version_ihl = IP_VERSION << 4 | ihl;
     resp->dscp_ecn = 0;

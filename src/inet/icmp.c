@@ -19,16 +19,16 @@ struct icmp_echo_packet {
     uint16_t checksum;
     uint16_t identifier;
     uint16_t sequence_number;
-    uint8_t data[];
+    uint8_t payload[];
 };
 
 int icmp_handle_request(struct context *ctx) {
-    if (ctx->request.len < sizeof(struct icmp_echo_packet)) {
+    struct icmp_echo_packet *req =
+            packet_pop_head(&ctx->request, sizeof(struct icmp_echo_packet));
+    if (!req) {
         log_warn("ICMP request too short");
         return 1;
     }
-
-    struct icmp_echo_packet *req = (struct icmp_echo_packet *)ctx->request.head;
 
     if (req->type != ICMP_TYPE_ECHO_REQUEST || req->code != 0x00) {
         log_warn("ICMP request type or code not supported: type=%d code=%d", req->type,
@@ -36,21 +36,22 @@ int icmp_handle_request(struct context *ctx) {
         return 1;
     }
 
-    if (inet_checksum((void *)req, ctx->request.len) != 0) {
+    size_t payload_len = ctx->request.len;
+    if (inet_checksum((void *)req, sizeof(*req) + payload_len) != 0) {
         log_warn("ICMP request checksum is incorrect");
         return 1;
     }
 
-    ctx->response.len = ctx->request.len;
-    struct icmp_echo_packet *resp = (struct icmp_echo_packet *)ctx->response.head;
+    struct icmp_echo_packet *resp =
+            packet_set_len(&ctx->response, sizeof(*resp) + payload_len);
     resp->type = ICMP_TYPE_ECHO_REPLY;
     resp->code = 0x00;
     resp->checksum = 0;
     resp->identifier = req->identifier;
     resp->sequence_number = req->sequence_number;
-    memcpy(resp->data, req->data, ctx->request.len - sizeof(struct icmp_echo_packet));
+    memcpy(resp->payload, req->payload, payload_len);
 
-    resp->checksum = inet_checksum((void *)resp, ctx->response.len);
+    resp->checksum = inet_checksum((void *)resp, sizeof(*resp) + payload_len);
 
     return 0;
 }

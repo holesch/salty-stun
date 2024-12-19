@@ -55,10 +55,8 @@ int main(void) {
             return 1;
         }
 
-        ctx.request.head = request_buffer.bytes;
-        ctx.request.len = len;
-        ctx.response.head = response_buffer.bytes;
-        ctx.response.len = 0;
+        packet_init(&ctx.request, request_buffer.bytes, len);
+        packet_init(&ctx.response, response_buffer.bytes, sizeof(response_buffer));
 
         char ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &ctx.outer_remote_addr.sin_addr, ip, INET_ADDRSTRLEN);

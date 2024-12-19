@@ -50,12 +50,11 @@ struct stun_mapped_address {
 };
 
 int stun_handle_request(struct context *ctx) {
-    if (ctx->request.len < sizeof(struct stun_packet)) {
+    struct stun_packet *req = packet_pop_head(&ctx->request, sizeof(*req));
+    if (!req) {
         log_warn("STUN packet is too short");
         return 1;
     }
-
-    struct stun_packet *req = (struct stun_packet *)ctx->request.head;
 
     if (req->type != htobe16(STUN_TYPE_BINDING_REQUEST)) {
         log_warn("Unknown STUN message type: 0x%04x", be16toh(req->type));
@@ -70,16 +69,17 @@ int stun_handle_request(struct context *ctx) {
     uint32_t remote_addr = ctx->outer_remote_addr.sin_addr.s_addr;
     uint16_t remote_port = ctx->outer_remote_addr.sin_port;
 
-    struct stun_packet *res = (struct stun_packet *)ctx->response.head;
-    struct stun_attr *attr = (struct stun_attr *)res->data;
+    size_t response_len = sizeof(struct stun_packet) + sizeof(struct stun_attr) +
+            sizeof(struct stun_mapped_address);
+    struct stun_packet *resp = packet_set_len(&ctx->response, response_len);
+    struct stun_attr *attr = (struct stun_attr *)resp->data;
     struct stun_mapped_address *mapped_address =
             (struct stun_mapped_address *)attr->data;
-    ctx->response.len = sizeof(*res) + sizeof(*attr) + sizeof(*mapped_address);
 
-    res->type = htobe16(STUN_TYPE_BINDING_RESPONSE);
-    res->length = htobe16(sizeof(*attr) + sizeof(*mapped_address));
-    res->magic_cookie = req->magic_cookie;
-    memcpy(res->transaction_id, req->transaction_id, sizeof(res->transaction_id));
+    resp->type = htobe16(STUN_TYPE_BINDING_RESPONSE);
+    resp->length = htobe16(sizeof(*attr) + sizeof(*mapped_address));
+    resp->magic_cookie = req->magic_cookie;
+    memcpy(resp->transaction_id, req->transaction_id, sizeof(resp->transaction_id));
 
     attr->length = htobe16(sizeof(*mapped_address));
     mapped_address->reserved = 0;
