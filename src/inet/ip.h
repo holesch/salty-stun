@@ -1,8 +1,8 @@
 #ifndef IP_H_
 #define IP_H_
 
-#include "packet.h"
+#include "context.h"
 
-int ip_handle_request(struct packet *request, struct packet *response);
+int ip_handle_request(struct context *ctx);
 
 #endif // IP_H_

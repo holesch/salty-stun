@@ -43,40 +43,36 @@ int main(void) {
 
     static ALIGNED_BUFFER(request_buffer, 4096);
     static ALIGNED_BUFFER(response_buffer, 4096);
-    struct packet request;
-    struct packet response;
-    struct sockaddr_in src_addr;
+    struct context ctx;
     ssize_t len = 0;
 
     while (1) {
-        socklen_t src_addr_len = sizeof(src_addr);
+        socklen_t src_addr_len = sizeof(ctx.outer_remote_addr);
         len = recvfrom(sockfd, request_buffer.bytes, sizeof(request_buffer), 0,
-                (struct sockaddr *)&src_addr, &src_addr_len);
+                (struct sockaddr *)&ctx.outer_remote_addr, &src_addr_len);
         if (len < 0) {
             log_errnum_error("recvfrom");
             return 1;
         }
 
-        request.head = request_buffer.bytes;
-        request.len = len;
-        response.head = response_buffer.bytes;
-        response.len = 0;
+        ctx.request.head = request_buffer.bytes;
+        ctx.request.len = len;
+        ctx.response.head = response_buffer.bytes;
+        ctx.response.len = 0;
 
         char ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &src_addr.sin_addr, ip, INET_ADDRSTRLEN);
-        log_debug("received %zu bytes from %s:%d", request.len, ip,
-                ntohs(src_addr.sin_port));
+        inet_ntop(AF_INET, &ctx.outer_remote_addr.sin_addr, ip, INET_ADDRSTRLEN);
+        log_debug("received %zu bytes from %s:%d", ctx.request.len, ip,
+                ntohs(ctx.outer_remote_addr.sin_port));
 
-        int err = wireguard_handle_request(&wg, &request, &response);
-        if (!err) {
-            if (response.len != 0) {
-                log_debug("sending %zu bytes to %s:%d", response.len, ip,
-                        ntohs(src_addr.sin_port));
-                len = sendto(sockfd, response_buffer.bytes, response.len, 0,
-                        (struct sockaddr *)&src_addr, src_addr_len);
-                if (len < 0) {
-                    log_errnum_error("sendto");
-                }
+        int err = wireguard_handle_request(&wg, &ctx);
+        if (!err && ctx.response.len != 0) {
+            log_debug("sending %zu bytes to %s:%d", ctx.response.len, ip,
+                    ntohs(ctx.outer_remote_addr.sin_port));
+            len = sendto(sockfd, ctx.response.head, ctx.response.len, 0,
+                    (struct sockaddr *)&ctx.outer_remote_addr, src_addr_len);
+            if (len < 0) {
+                log_errnum_error("sendto");
             }
         }
     }

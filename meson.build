@@ -37,6 +37,8 @@ exe = executable(
         'src/inet/ip.c',
         'src/inet/icmp.c',
         'src/inet/checksum.c',
+        'src/inet/udp.c',
+        'src/stun/stun.c',
     ],
     include_directories: 'src',
     install: true,

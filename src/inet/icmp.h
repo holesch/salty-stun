@@ -1,8 +1,8 @@
 #ifndef INET_ICMP_H_
 #define INET_ICMP_H_
 
-#include "packet.h"
+#include "context.h"
 
-int icmp_handle_request(struct packet *request, struct packet *response);
+int icmp_handle_request(struct context *ctx);
 
 #endif // INET_ICMP_H_

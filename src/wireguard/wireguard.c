@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "context.h"
 #include "inet/ip.h"
 #include "log.h"
 #include "packet.h"
@@ -64,10 +65,8 @@ struct session {
     uint64_t send_counter;
 };
 
-static int wireguard_handle_handshake(struct wireguard *wg,
-        struct packet *request_bytes, struct packet *response_bytes);
-static int wireguard_handle_data(
-        struct wireguard *wg, struct packet *request, struct packet *response);
+static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx);
+static int wireguard_handle_data(struct wireguard *wg, struct context *ctx);
 
 // Label-Mac1
 //     The UTF-8 string literal “mac1----”, 8 bytes of output.
@@ -106,38 +105,36 @@ int wireguard_init(struct wireguard *wg, const uint8_t *private_key) {
     return 0;
 }
 
-int wireguard_handle_request(
-        struct wireguard *wg, struct packet *request, struct packet *response) {
-    if (request->len < sizeof(uint8_t)) {
+int wireguard_handle_request(struct wireguard *wg, struct context *ctx) {
+    if (ctx->request.len < sizeof(uint8_t)) {
         log_warn("wireguard message is too short");
         return 1;
     }
 
-    uint8_t type = request->head[0];
+    uint8_t type = ctx->request.head[0];
     switch (type) {
     case WG_TYPE_INITIATION:
         log_debug("received initiation packet");
-        return wireguard_handle_handshake(wg, request, response);
+        return wireguard_handle_handshake(wg, ctx);
     case WG_TYPE_TRANSPORT:
         log_debug("received transport packet");
-        return wireguard_handle_data(wg, request, response);
+        return wireguard_handle_data(wg, ctx);
     default:
         log_warn("unknown packet type: %d", type);
         return 1;
     }
 }
 
-static int wireguard_handle_handshake(struct wireguard *wg,
-        struct packet *request_bytes, struct packet *response_bytes) {
+static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx) {
     hash_state hash_state;
     struct kdf_state kdf_state;
     uint8_t hash[HASH_SIZE];
     uint8_t chaining_key[KDF_KEY_SIZE];
     uint8_t shared_secret[DH_SHARED_SECRET_SIZE];
     uint8_t encryption_key[AEAD_KEY_SIZE];
-    struct handshake_request *req = (struct handshake_request *)request_bytes->head;
+    struct handshake_request *req = (struct handshake_request *)ctx->request.head;
 
-    if (request_bytes->len < sizeof(*req)) {
+    if (ctx->request.len < sizeof(*req)) {
         log_warn("wireguard message is too short");
         return 1;
     }
@@ -145,7 +142,7 @@ static int wireguard_handle_handshake(struct wireguard *wg,
     // msg.mac1 := Mac(Hash(Label-Mac1 ‖ Spub m′ ), msgα)
     uint8_t mac1[MAC_SIZE];
     size_t in_len = sizeof(*req) - sizeof(req->mac1) - sizeof(req->mac2);
-    mac_calculate(mac1, request_bytes->head, in_len, wg->mac1_key);
+    mac_calculate(mac1, ctx->request.head, in_len, wg->mac1_key);
 
     if (sodium_memcmp(mac1, req->mac1, sizeof(mac1)) != 0) {
         log_warn("mac1 mismatch");
@@ -222,7 +219,7 @@ static int wireguard_handle_handshake(struct wireguard *wg,
 
     // TODO check timestamp
 
-    struct handshake_response *resp = (struct handshake_response *)response_bytes->head;
+    struct handshake_response *resp = (struct handshake_response *)ctx->response.head;
     resp->type = WG_TYPE_RESPONSE;
     memset(resp->reserved, 0, sizeof(resp->reserved));
 
@@ -288,7 +285,7 @@ static int wireguard_handle_handshake(struct wireguard *wg,
     hash_update(&hash_state, remote_public_key, sizeof(remote_public_key));
     hash_final(&hash_state, mac1_key);
     in_len = sizeof(*resp) - sizeof(resp->mac1) - sizeof(resp->mac2);
-    mac_calculate(resp->mac1, response_bytes->head, in_len, mac1_key);
+    mac_calculate(resp->mac1, ctx->response.head, in_len, mac1_key);
 
     // msg.mac2 := 0
     memset(resp->mac2, 0, sizeof(resp->mac2));
@@ -308,16 +305,15 @@ static int wireguard_handle_handshake(struct wireguard *wg,
     sodium_memzero(shared_secret, sizeof(shared_secret));
     sodium_memzero(encryption_key, sizeof(encryption_key));
 
-    response_bytes->len = sizeof(*resp);
+    ctx->response.len = sizeof(*resp);
     return 0;
 }
 
-static int wireguard_handle_data(
-        struct wireguard *wg, struct packet *request, struct packet *response) {
+static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
     (void)wg;
-    struct transport_data *req = (struct transport_data *)request->head;
+    struct transport_data *req = (struct transport_data *)ctx->request.head;
 
-    if (request->len < sizeof(*req) + AEAD_TAG_SIZE) {
+    if (ctx->request.len < sizeof(*req) + AEAD_TAG_SIZE) {
         log_warn("wireguard message is too short");
         return 1;
     }
@@ -340,35 +336,35 @@ static int wireguard_handle_data(
     }
 
     // msg.packet := Aead(T send m , N send m , P, ϵ)
-    size_t packet_len = request->len - sizeof(*req);
+    size_t packet_len = ctx->request.len - sizeof(*req);
     int err = aead_decrypt(req->packet, session->recv_key, req->counter, req->packet,
             packet_len, NULL, 0);
     if (err) {
         log_warn("error decrypting packet");
         return 1;
     }
-    request->len -= AEAD_TAG_SIZE;
+    ctx->request.len -= AEAD_TAG_SIZE;
 
     // N send m := N send m + 1
     session->recv_counter++;
 
-    packet_shrink(request, sizeof(struct transport_data));
-    packet_reserve(response, sizeof(struct transport_data));
+    packet_shrink(&ctx->request, sizeof(struct transport_data));
+    packet_reserve(&ctx->response, sizeof(struct transport_data));
 
-    if (request->len == 0) {
+    if (ctx->request.len == 0) {
         log_debug("received keepalive packet");
         return 1;
     }
 
-    err = ip_handle_request(request, response);
+    err = ip_handle_request(ctx);
     if (err) {
         return 1;
     }
 
-    packet_expand(response, sizeof(struct transport_data));
-    packet_expand(request, sizeof(struct transport_data));
+    packet_expand(&ctx->response, sizeof(struct transport_data));
+    packet_expand(&ctx->request, sizeof(struct transport_data));
 
-    struct transport_data *resp = (struct transport_data *)response->head;
+    struct transport_data *resp = (struct transport_data *)ctx->response.head;
     resp->type = WG_TYPE_TRANSPORT;
     memset(resp->reserved, 0, sizeof(resp->reserved));
 
@@ -377,16 +373,16 @@ static int wireguard_handle_data(
 
     // pad packet to multiple of 16 bytes
     // P := P ‖0^16·⎡‖P‖/16⎤−‖P‖
-    packet_pad(response, sizeof(*resp));
+    packet_pad(&ctx->response, sizeof(*resp));
 
     // msg.counter := N send m
     resp->counter = session->send_counter;
 
     // msg.packet := Aead(T send m , N send m , P, ϵ)
-    packet_len = response->len - sizeof(*resp);
+    packet_len = ctx->response.len - sizeof(*resp);
     aead_encrypt(resp->packet, session->send_key, resp->counter, resp->packet,
             packet_len, NULL, 0);
-    response->len += AEAD_TAG_SIZE;
+    ctx->response.len += AEAD_TAG_SIZE;
 
     // N send m := N send m + 1
     session->send_counter++;

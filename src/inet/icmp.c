@@ -3,6 +3,7 @@
 #include <endian.h>
 #include <stdint.h>
 
+#include "context.h"
 #include "inet/checksum.h"
 #include "log.h"
 #include "packet.h"
@@ -21,13 +22,13 @@ struct icmp_echo_packet {
     uint8_t data[];
 };
 
-int icmp_handle_request(struct packet *request, struct packet *response) {
-    if (request->len < sizeof(struct icmp_echo_packet)) {
+int icmp_handle_request(struct context *ctx) {
+    if (ctx->request.len < sizeof(struct icmp_echo_packet)) {
         log_warn("ICMP request too short");
         return 1;
     }
 
-    struct icmp_echo_packet *req = (struct icmp_echo_packet *)request->head;
+    struct icmp_echo_packet *req = (struct icmp_echo_packet *)ctx->request.head;
 
     if (req->type != ICMP_TYPE_ECHO_REQUEST || req->code != 0x00) {
         log_warn("ICMP request type or code not supported: type=%d code=%d", req->type,
@@ -35,21 +36,21 @@ int icmp_handle_request(struct packet *request, struct packet *response) {
         return 1;
     }
 
-    if (inet_checksum((void *)req, request->len) != 0) {
+    if (inet_checksum((void *)req, ctx->request.len) != 0) {
         log_warn("ICMP request checksum is incorrect");
         return 1;
     }
 
-    response->len = request->len;
-    struct icmp_echo_packet *resp = (struct icmp_echo_packet *)response->head;
+    ctx->response.len = ctx->request.len;
+    struct icmp_echo_packet *resp = (struct icmp_echo_packet *)ctx->response.head;
     resp->type = ICMP_TYPE_ECHO_REPLY;
     resp->code = 0x00;
     resp->checksum = 0;
     resp->identifier = req->identifier;
     resp->sequence_number = req->sequence_number;
-    memcpy(resp->data, req->data, request->len - sizeof(struct icmp_echo_packet));
+    memcpy(resp->data, req->data, ctx->request.len - sizeof(struct icmp_echo_packet));
 
-    resp->checksum = inet_checksum((void *)resp, response->len);
+    resp->checksum = inet_checksum((void *)resp, ctx->response.len);
 
     return 0;
 }
