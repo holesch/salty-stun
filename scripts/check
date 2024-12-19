@@ -1,0 +1,12 @@
+#!/bin/sh -e
+
+PS4=">>> "
+set -x
+
+meson format --check-only
+meson setup --werror --fatal-meson-warnings --reconfigure builddir-check
+meson compile -C builddir-check
+yamllint .clang-tidy
+clang-tidy --verify-config
+ninja -C builddir-check clang-tidy
+ninja -C builddir-check clang-format-check

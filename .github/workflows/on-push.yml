@@ -1,0 +1,23 @@
+name: on-push
+
+on: [push]
+
+jobs:
+  static_checks:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install dependencies
+      # The meson version in Ubuntu 24.04 doesn't support "meson format", yet.
+      run: |
+        pipx install \
+          meson \
+          ;
+        sudo apt-get update
+        sudo apt-get install \
+          libsodium-dev \
+          libb2-dev \
+          ninja-build \
+          ;
+    - name: Run static checks
+      run: ./scripts/check
