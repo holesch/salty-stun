@@ -67,6 +67,7 @@ struct session {
 
 static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx);
 static int wireguard_handle_data(struct wireguard *wg, struct context *ctx);
+static void write_key(FILE *file, const char *name, const uint8_t *key);
 
 // Label-Mac1
 //     The UTF-8 string literal “mac1----”, 8 bytes of output.
@@ -74,11 +75,13 @@ static const uint8_t LABEL_MAC1[] = { 'm', 'a', 'c', '1', '-', '-', '-', '-' };
 static struct session
         g_sessions[1]; // NOLINT: will be replaced when multiple sessions are supported
 
-int wireguard_init(struct wireguard *wg, const uint8_t *private_key) {
+int wireguard_init(struct wireguard *wg, const uint8_t *private_key, FILE *key_log) {
     struct hash_state hash_state;
 
     wg->private_key = private_key;
     dh_derive_public_key(wg->public_key, private_key);
+
+    wg->key_log = key_log;
 
     // pre-calculate mac1 key
     // msg.mac1 := Mac(Hash(Label-Mac1 ‖ Spub m′ ), msgα)
@@ -304,6 +307,13 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
     session->recv_counter = 0;
     session->send_counter = 0;
 
+    if (wg->key_log) {
+        write_key(wg->key_log, "LOCAL_STATIC_PRIVATE_KEY", wg->private_key);
+        write_key(wg->key_log, "REMOTE_STATIC_PUBLIC_KEY", remote_public_key);
+        write_key(wg->key_log, "LOCAL_EPHEMERAL_PRIVATE_KEY", ephemeral_private_key);
+        write_key(wg->key_log, "PRE_SHARED_KEY", pre_shared_key);
+    }
+
     // Epriv i = Epub i = Epriv r = Epub r = Ci = Cr := ϵ
     sodium_memzero(ephemeral_private_key, sizeof(ephemeral_private_key));
     sodium_memzero(chaining_key, sizeof(chaining_key));
@@ -387,4 +397,13 @@ static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
     session->send_counter++;
 
     return 0;
+}
+
+static void write_key(FILE *file, const char *name, const uint8_t *key) {
+    char b64[sodium_base64_ENCODED_LEN(
+            DH_PRIVATE_KEY_SIZE, sodium_base64_VARIANT_ORIGINAL)];
+    sodium_bin2base64(
+            b64, sizeof(b64), key, DH_PRIVATE_KEY_SIZE, sodium_base64_VARIANT_ORIGINAL);
+    (void)fprintf(file, "%s = %s\n", name, b64);
+    (void)fflush(file);
 }
