@@ -12,7 +12,7 @@ uint16_t inet_checksum(const void *data, size_t len) {
         len -= sizeof(*data16);
     }
     if (len) {
-        sum += *(uint8_t *)data16;
+        sum += *(const uint8_t *)data16;
     }
 
     // folding twice to cover the worst case

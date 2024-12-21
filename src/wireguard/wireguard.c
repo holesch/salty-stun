@@ -75,7 +75,7 @@ static struct session
         g_sessions[1]; // NOLINT: will be replaced when multiple sessions are supported
 
 int wireguard_init(struct wireguard *wg, const uint8_t *private_key) {
-    hash_state hash_state;
+    struct hash_state hash_state;
 
     wg->private_key = private_key;
     dh_derive_public_key(wg->public_key, private_key);
@@ -126,7 +126,7 @@ int wireguard_handle_request(struct wireguard *wg, struct context *ctx) {
 }
 
 static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx) {
-    hash_state hash_state;
+    struct hash_state hash_state;
     struct kdf_state kdf_state;
     uint8_t hash[HASH_SIZE];
     uint8_t chaining_key[KDF_KEY_SIZE];

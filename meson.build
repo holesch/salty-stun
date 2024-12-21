@@ -8,6 +8,28 @@ project(
 add_project_arguments('-D_DEFAULT_SOURCE', language: 'c')
 
 cc = meson.get_compiler('c')
+
+add_project_arguments(
+    cc.get_supported_arguments(
+        [
+            '-Wundef',
+            '-Wmissing-include-dirs',
+            '-Wold-style-definition',
+            '-Wstrict-prototypes',
+            '-Wmissing-prototypes',
+            '-Walloca',
+            '-Wshadow',
+            '-Wcast-qual',
+            '-Wswitch-default',
+            '-Wswitch-enum',
+            '-Wredundant-decls',
+            '-Wundef',
+            '-Wnested-externs',
+        ],
+    ),
+    language: 'c',
+)
+
 fs = import('fs')
 
 # Strip relative path prefixes
