@@ -1,7 +1,7 @@
 project(
     'salty-stun',
     'c',
-    version: '0.1',
+    version: '0.1.0',
     meson_version: '>=1.3',
     default_options: ['c_std=c11', 'warning_level=3'],
 )
@@ -47,9 +47,15 @@ endif
 sodium_dep = dependency('libsodium')
 blake2_dep = dependency('libb2')
 
+version_data = configuration_data()
+version_data.set_quoted('SALTY_STUN_VERSION', meson.project_version())
+configure_file(output: 'version.h', configuration: version_data)
+config_dir = include_directories('.')
+
 exe = executable(
     'salty-stun',
     sources: [
+        'src/args.c',
         'src/main.c',
         'src/log.c',
         'src/wireguard/hash.c',
@@ -62,7 +68,7 @@ exe = executable(
         'src/inet/udp.c',
         'src/stun/stun.c',
     ],
-    include_directories: 'src',
+    include_directories: ['src', config_dir],
     install: true,
     dependencies: [sodium_dep, blake2_dep],
 )

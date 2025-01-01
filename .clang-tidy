@@ -23,6 +23,9 @@ Checks:
 
   # The fopen "e" mode is a glibc extension
   - '-android-cloexec-fopen'
+
+  # Project is single threaded
+  - '-concurrency-mt-unsafe'
 CheckOptions:
   bugprone-misplaced-widening-cast.CheckImplicitCasts: '1'
   bugprone-suspicious-enum-usage.StrictMode: '1'
