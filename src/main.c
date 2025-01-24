@@ -3,12 +3,16 @@
 #include <sodium.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/socket.h>
 
 #include "args.h"
 #include "log.h"
 #include "packet.h"
+#include "wireguard/state_mem.h"
 #include "wireguard/wireguard.h"
+
+static time_t now_func(void);
 
 int main(int argc, char *argv[]) {
     struct args args;
@@ -19,8 +23,22 @@ int main(int argc, char *argv[]) {
     }
     log_init(args.level);
 
+    static struct state_mem_session *sessions;
+    sessions = calloc(args.max_sessions, sizeof(struct state_mem_session));
+    static HashTableNode **index_buckets;
+    index_buckets = (HashTableNode **)calloc(
+            STATE_MEM_NUM_BUCKETS(args.max_sessions), sizeof(HashTableNode *));
+    if (!sessions || !index_buckets) {
+        log_errnum_error("error allocating memory for WireGuard sessions");
+        return 1;
+    }
+
+    struct state_mem state_mem;
+    struct wireguard_state *state =
+            state_mem_init(&state_mem, sessions, args.max_sessions, index_buckets);
+
     struct wireguard wg;
-    wireguard_init(&wg, args.private_key, args.key_log);
+    wireguard_init(&wg, args.private_key, args.key_log, state, now_func);
 
     // create UDP server
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -74,4 +92,15 @@ int main(int argc, char *argv[]) {
     }
 
     return 0;
+}
+
+static time_t now_func(void) {
+#ifdef CLOCK_BOOTTIME
+    clockid_t clockid = CLOCK_BOOTTIME;
+#else
+    clockid_t clockid = CLOCK_MONOTONIC;
+#endif
+    struct timespec ts;
+    clock_gettime(clockid, &ts);
+    return ts.tv_sec;
 }

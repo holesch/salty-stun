@@ -56,15 +56,6 @@ struct transport_data {
     uint8_t packet[];
 };
 
-struct session {
-    uint32_t local_index;
-    uint32_t remote_index;
-    uint8_t recv_key[AEAD_KEY_SIZE];
-    uint8_t send_key[AEAD_KEY_SIZE];
-    uint64_t recv_counter;
-    uint64_t send_counter;
-};
-
 static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx);
 static int wireguard_handle_data(struct wireguard *wg, struct context *ctx);
 static void write_key(FILE *file, const char *name, const uint8_t *key);
@@ -72,16 +63,17 @@ static void write_key(FILE *file, const char *name, const uint8_t *key);
 // Label-Mac1
 //     The UTF-8 string literal “mac1----”, 8 bytes of output.
 static const uint8_t LABEL_MAC1[] = { 'm', 'a', 'c', '1', '-', '-', '-', '-' };
-static struct session
-        g_sessions[1]; // NOLINT: will be replaced when multiple sessions are supported
 
-int wireguard_init(struct wireguard *wg, const uint8_t *private_key, FILE *key_log) {
+int wireguard_init(struct wireguard *wg, const uint8_t *private_key, FILE *key_log,
+        struct wireguard_state *state, now_func_t now) {
     struct hash_state hash_state;
 
     wg->private_key = private_key;
     dh_derive_public_key(wg->public_key, private_key);
 
     wg->key_log = key_log;
+    wg->state = state;
+    wg->now = now;
 
     // pre-calculate mac1 key
     // msg.mac1 := Mac(Hash(Label-Mac1 ‖ Spub m′ ), msgα)
@@ -135,6 +127,7 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
     uint8_t chaining_key[KDF_KEY_SIZE];
     uint8_t shared_secret[DH_SHARED_SECRET_SIZE];
     uint8_t encryption_key[AEAD_KEY_SIZE];
+    struct wireguard_session session;
 
     struct handshake_request *req = packet_pop_head(&ctx->request, sizeof(*req));
     if (!req) {
@@ -157,11 +150,8 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
         return 1;
     }
 
-    // TODO support multiple sessions
-    struct session *session = &g_sessions[0];
-
     // msg.sender := Ii
-    session->remote_index = req->sender;
+    session.remote_index = req->sender;
 
     // Ci := Hash(Construction)
     // Construction
@@ -232,11 +222,11 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
     memset(resp->reserved, 0, sizeof(resp->reserved));
 
     // msg.sender := Ir
-    session->local_index = randombytes_random();
-    resp->sender = session->local_index;
+    session.local_index = randombytes_random();
+    resp->sender = session.local_index;
 
     // msg.receiver := Ii
-    resp->receiver = session->remote_index;
+    resp->receiver = session.remote_index;
 
     // (Epriv r , Epub r) := DH-Generate()
     // msg.ephemeral := Epub r
@@ -300,12 +290,20 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
 
     // (T send i = T recv r , T recv i = T send r) := Kdf2(Ci = Cr , ϵ)
     kdf_init(&kdf_state, chaining_key, NULL, 0);
-    kdf_expand(&kdf_state, session->recv_key);
-    kdf_expand(&kdf_state, session->send_key);
+    kdf_expand(&kdf_state, session.recv_key);
+    kdf_expand(&kdf_state, session.send_key);
 
     // N send i = N recv r = N recv i = N send r := 0
-    session->recv_counter = 0;
-    session->send_counter = 0;
+    session.recv_counter = 0;
+    session.send_counter = 0;
+
+    session.created_at = wg->now();
+
+    // store session
+    err = wg->state->store_new_session(wg->state, &session);
+    if (err) {
+        return 1;
+    }
 
     if (wg->key_log) {
         write_key(wg->key_log, "LOCAL_STATIC_PRIVATE_KEY", wg->private_key);
@@ -331,12 +329,13 @@ static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
         return 1;
     }
 
-    // TODO support multiple sessions
-    struct session *session = &g_sessions[0];
-
     // msg.receiver := Im′
-    if (req->receiver != session->local_index) {
-        log_warn("receiver doesn't match any session");
+    uint32_t local_index = req->receiver;
+
+    struct wireguard_session *session =
+            wg->state->get_session_by_local_index(wg->state, local_index);
+    if (!session) {
+        log_warn("unknown session");
         return 1;
     }
 

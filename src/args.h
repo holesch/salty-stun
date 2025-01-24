@@ -11,6 +11,7 @@ struct args {
     uint8_t private_key[DH_PRIVATE_KEY_SIZE];
     FILE *key_log;
     enum log_level level;
+    size_t max_sessions;
 };
 
 void parse_args(int argc, char *argv[], struct args *args);

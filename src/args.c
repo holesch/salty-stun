@@ -14,56 +14,64 @@
 static FILE *open_key_log_file(const char *path);
 static void read_key(const char *path, unsigned char *key);
 static bool is_lone_dash(const char *str);
-static unsigned long handle_ulong_option(
-        const char *arg, unsigned long max_value, const char *error_msg);
+static unsigned long handle_ulong_option(const char *arg, unsigned long min_value,
+        unsigned long max_value, const char *error_msg);
 static int parse_ulong(const char *str, unsigned long *val, int base);
 _Noreturn static void usage_error(const char *fmt, ...);
 _Noreturn static void usage_error_errnum(const char *fmt, ...);
 
 static const char USAGE[] =
-        "usage: salty-stun [-hV] [-p PORT] [-k KEY_FILE] [-K KEY_LOG] [-l LEVEL]\n";
+        "usage: salty-stun [-hV] [-p PORT] [-k KEY_FILE] [-K KEY_LOG] [-l LEVEL] [-n MAX_SESSIONS]\n";
 static const char HELP[] =
         "\n"
         "A STUN server running inside a WireGuard tunnel, returning the transport\n"
         "address of the WireGuard endpoint to enable P2P VPN tunnels through NATs.\n"
         "\n"
         "optional arguments:\n"
-        "  -h           show this help message and exit\n"
-        "  -V           output version information and exit\n"
-        "  -p PORT      listen on UDP port PORT (default %d)\n"
-        "  -k KEY_FILE  read private key from KEY_FILE (default\n"
-        "               %s)\n"
-        "  -K KEY_LOG   write keys to KEY_LOG, which can be used to decrypt the traffic\n"
-        "               later\n"
-        "  -l LEVEL     set log level to LEVEL (between 0 and 3)\n"
+        "  -h               show this help message and exit\n"
+        "  -V               output version information and exit\n"
+        "  -p PORT          listen on UDP port PORT (default %d)\n"
+        "  -k KEY_FILE      read private key from KEY_FILE (default\n"
+        "                   %s)\n"
+        "  -K KEY_LOG       write keys to KEY_LOG, which can be used to decrypt the traffic\n"
+        "                   later\n"
+        "  -l LEVEL         set log level to LEVEL (between 0 and 3)\n"
+        "  -n MAX_SESSIONS  maximum number of WireGuard sessions (default %zu)\n"
         "";
 static const char VERSION[] = "salty-stun " SALTY_STUN_VERSION "\n";
-static const char OPTSTRING[] = ":hVp:k:K:l:";
+static const char OPTSTRING[] = ":hVp:k:K:l:n:";
 
 static const char DEFAULT_KEY_FILE[] = "/etc/salty-stun/private-key";
 static const uint16_t DEFAULT_PORT = 51820;
+static const size_t DEFAULT_MAX_SESSIONS = 1024;
 
 void parse_args(int argc, char *argv[], struct args *args) {
     bool has_key_file = false;
     args->port = DEFAULT_PORT;
     args->key_log = NULL;
     args->level = LOG_INFO;
+    args->max_sessions = DEFAULT_MAX_SESSIONS;
 
     int opt = 0;
     while ((opt = getopt(argc, argv, OPTSTRING)) != -1) {
         switch (opt) {
         case 'h':
             (void)fprintf(stdout, USAGE);
-            (void)fprintf(stdout, HELP, DEFAULT_PORT, DEFAULT_KEY_FILE);
+            (void)fprintf(
+                    stdout, HELP, DEFAULT_PORT, DEFAULT_KEY_FILE, DEFAULT_MAX_SESSIONS);
             exit(0);
             break;
         case 'V':
             (void)fprintf(stdout, VERSION);
             exit(0);
             break;
-        case 'p':
-            args->port = handle_ulong_option(optarg, UINT16_MAX, "-p: invalid port");
+        case 'p': {
+            unsigned long min_port = 1;
+            unsigned long max_port = UINT16_MAX;
+            args->port =
+                    handle_ulong_option(optarg, min_port, max_port, "-p: invalid port");
             break;
+        }
         case 'k':
             read_key(optarg, args->private_key);
             has_key_file = true;
@@ -71,10 +79,20 @@ void parse_args(int argc, char *argv[], struct args *args) {
         case 'K':
             args->key_log = open_key_log_file(optarg);
             break;
-        case 'l':
+        case 'l': {
+            unsigned long min_level = (unsigned long)LOG_ERROR;
+            unsigned long max_level = (unsigned long)LOG_DEBUG;
             args->level = (enum log_level)handle_ulong_option(
-                    optarg, (unsigned long)LOG_DEBUG, "-l: invalid log level");
+                    optarg, min_level, max_level, "-l: invalid log level");
             break;
+        }
+        case 'n': {
+            unsigned long min_sessions = 1;
+            unsigned long max_sessions = SIZE_MAX;
+            args->max_sessions = handle_ulong_option(optarg, min_sessions, max_sessions,
+                    "-n: invalid number of sessions");
+            break;
+        }
         case ':':
             usage_error("option -%c requires an argument", optopt);
             break;
@@ -167,11 +185,11 @@ static bool is_lone_dash(const char *str) {
     return str[0] == '-' && str[1] == '\0';
 }
 
-static unsigned long handle_ulong_option(
-        const char *arg, unsigned long max_value, const char *error_msg) {
+static unsigned long handle_ulong_option(const char *arg, unsigned long min_value,
+        unsigned long max_value, const char *error_msg) {
     unsigned long val = 0;
     int err = parse_ulong(arg, &val, 0);
-    if (err || val > max_value) {
+    if (err || val < min_value || val > max_value) {
         usage_error("argument %s: '%s'", error_msg, arg);
     }
 
