@@ -13,6 +13,7 @@
 
 static FILE *open_key_log_file(const char *path);
 static void read_key(const char *path, unsigned char *key);
+static void read_key_from_file(FILE *file, const char *path, unsigned char *key);
 static bool is_lone_dash(const char *str);
 static unsigned long handle_ulong_option(const char *arg, unsigned long min_value,
         unsigned long max_value, const char *error_msg);
@@ -125,14 +126,22 @@ static FILE *open_key_log_file(const char *path) {
 }
 
 static void read_key(const char *path, unsigned char *key) {
-    FILE *file = stdin;
-    if (!is_lone_dash(path)) {
-        file = fopen(path, "r");
+    if (is_lone_dash(path)) {
+        read_key_from_file(stdin, "<stdin>", key);
+    } else {
+        FILE *file = fopen(path, "r");
         if (!file) {
             usage_error_errnum("failed to open key file \"%s\"", path);
         }
+        read_key_from_file(file, path, key);
+        int err = fclose(file);
+        if (err) {
+            usage_error_errnum("failed to close key file \"%s\"", path);
+        }
     }
+}
 
+static void read_key_from_file(FILE *file, const char *path, unsigned char *key) {
     char base64_key[sodium_base64_ENCODED_LEN(
             DH_PRIVATE_KEY_SIZE, sodium_base64_VARIANT_ORIGINAL)];
 
@@ -171,13 +180,6 @@ static void read_key(const char *path, unsigned char *key) {
             sizeof(base64_key) - 1, NULL, NULL, NULL, sodium_base64_VARIANT_ORIGINAL);
     if (err) {
         usage_error("failed to decode key in \"%s\"", path);
-    }
-
-    if (file != stdin) {
-        err = fclose(file);
-        if (err) {
-            usage_error_errnum("failed to close key file \"%s\"", path);
-        }
     }
 }
 

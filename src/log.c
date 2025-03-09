@@ -122,7 +122,7 @@ static void get_local_time(struct tm *time, long *msec) {
         *msec = (now.tv_nsec + (MSEC_IN_NSEC / 2)) / MSEC_IN_NSEC;
     }
 
-    localtime_r(&now.tv_sec, time);
+    (void)localtime_r(&now.tv_sec, time);
 }
 
 static void finish_log_message(void) {

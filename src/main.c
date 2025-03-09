@@ -101,6 +101,6 @@ static time_t now_func(void) {
     clockid_t clockid = CLOCK_MONOTONIC;
 #endif
     struct timespec ts;
-    clock_gettime(clockid, &ts);
+    (void)clock_gettime(clockid, &ts);
     return ts.tv_sec;
 }
