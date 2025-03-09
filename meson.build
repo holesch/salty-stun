@@ -74,3 +74,17 @@ exe = executable(
     install: true,
     dependencies: [sodium_dep, blake2_dep],
 )
+
+scdoc = find_program('scdoc', required: get_option('docs'))
+if scdoc.found()
+    manpage = custom_target(
+        'salty-stun.1',
+        input: 'salty-stun.1.scd',
+        output: 'salty-stun.1',
+        command: ['scdoc'],
+        feed: true,
+        capture: true,
+        install: true,
+        install_dir: get_option('mandir') / 'man1',
+    )
+endif
