@@ -3,6 +3,7 @@
 PS4=">>> "
 set -x
 
+editorconfig-checker
 meson format --check-only
 meson setup --werror --fatal-meson-warnings --reconfigure builddir-check
 meson compile -C builddir-check

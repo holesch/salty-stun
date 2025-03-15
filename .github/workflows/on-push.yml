@@ -13,6 +13,9 @@ jobs:
         pipx install \
           meson \
           ;
+        wget 'https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v3.2.0/ec-linux-amd64.tar.gz' -O - \
+          | tar --gzip --extract --file - --directory /usr/local bin/ec-linux-amd64
+        mv /usr/local/bin/ec-linux-amd64 /usr/local/bin/editorconfig-checker
         sudo apt-get update
         sudo apt-get install \
           libsodium-dev \
