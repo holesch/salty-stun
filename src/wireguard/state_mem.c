@@ -42,14 +42,14 @@ static int store_new_session(
     struct state_mem_session *state_session =
             &state_mem->sessions[state_mem->next_session_index];
 
-    double age = difftime(now, state_session->session.created_at);
-    if (age < WIREGUARD_REJECT_AFTER_TIME) {
-        log_warn("Cannot store more than %d active WireGuard sessions",
-                state_mem->session_count);
-        return 1;
-    }
-
     if (state_session->session.created_at != 0) {
+        double age = difftime(now, state_session->session.created_at);
+        if (age < WIREGUARD_REJECT_AFTER_TIME) {
+            log_warn("Cannot store more than %d active WireGuard sessions",
+                    state_mem->session_count);
+            return 1;
+        }
+
         hashtable_remove_key(
                 &state_mem->index_session_map, &state_session->session.local_index);
     }
