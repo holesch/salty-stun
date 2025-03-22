@@ -1,10 +1,17 @@
 #include <arpa/inet.h>
+#include <assert.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <signal.h>
 #include <sodium.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "args.h"
 #include "log.h"
@@ -13,6 +20,13 @@
 #include "wireguard/wireguard.h"
 
 static time_t now_func(void);
+static void setup_signal_handling(void);
+static void signal_handler(int signum);
+static void die_on_signal(void);
+static void poll_or_die(struct pollfd *fds, nfds_t nfds);
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static int g_signal_pipe[2];
 
 int main(int argc, char *argv[]) {
     struct args args;
@@ -22,6 +36,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     log_init(args.level);
+
+    setup_signal_handling();
 
     static struct state_mem_session *sessions;
     sessions = calloc(args.max_sessions, sizeof(struct state_mem_session));
@@ -62,7 +78,23 @@ int main(int argc, char *argv[]) {
     struct context ctx;
     ssize_t len = 0;
 
+    struct pollfd fds[2];
+    fds[0].fd = sockfd;
+    fds[0].events = POLLIN;
+    fds[1].fd = g_signal_pipe[0];
+    fds[1].events = POLLIN;
+
     while (1) {
+        poll_or_die(fds, sizeof(fds) / sizeof(fds[0]));
+
+        if (fds[1].revents & POLLIN) {
+            die_on_signal();
+        }
+
+        if (!(fds[0].revents & POLLIN)) {
+            continue;
+        }
+
         socklen_t src_addr_len = sizeof(ctx.outer_remote_addr);
         len = recvfrom(sockfd, request_buffer.bytes, sizeof(request_buffer), 0,
                 (struct sockaddr *)&ctx.outer_remote_addr, &src_addr_len);
@@ -103,4 +135,62 @@ static time_t now_func(void) {
     struct timespec ts;
     (void)clock_gettime(clockid, &ts);
     return ts.tv_sec;
+}
+
+static void setup_signal_handling(void) {
+    int err = pipe(g_signal_pipe);
+    if (err) {
+        log_errnum_error("pipe");
+        exit(1);
+    }
+
+    struct sigaction sa = { 0 };
+    sa.sa_handler = signal_handler;
+    err = sigemptyset(&sa.sa_mask);
+    assert(!err);
+    sa.sa_flags = SA_RESTART; // Restart interrupted syscalls
+
+    err = sigaction(SIGINT, &sa, NULL);
+    assert(!err);
+    err = sigaction(SIGTERM, &sa, NULL);
+    assert(!err);
+
+    sa.sa_handler = SIG_IGN;
+    err = sigaction(SIGPIPE, &sa, NULL);
+    assert(!err);
+}
+
+void signal_handler(int signum) {
+    uint8_t sig = (char)signum;
+    (void)write(g_signal_pipe[1], &sig, sizeof(sig));
+}
+
+void die_on_signal(void) {
+    uint8_t sig = 0;
+    ssize_t err = read(g_signal_pipe[0], &sig, sizeof(sig));
+    if (err < 0) {
+        log_errnum_error("read");
+        exit(1);
+    }
+
+    int signum = sig;
+    const char *signame = strsignal(signum);
+    log_info("Received signal %d (%s), exiting", signum, signame);
+    exit(0);
+}
+
+static void poll_or_die(struct pollfd *fds, nfds_t nfds) {
+    while (1) {
+        int n_ready = poll(fds, nfds, -1);
+        if (n_ready >= 0) {
+            return;
+        }
+
+        if (errno == EINTR) {
+            continue;
+        }
+
+        log_errnum_error("poll");
+        exit(1);
+    }
 }

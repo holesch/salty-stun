@@ -21,8 +21,8 @@ Checks:
   # https://stackoverflow.com/a/58845898/5841556
   - '-hicpp-signed-bitwise'
 
-  # The fopen "e" mode is a glibc extension
-  - '-android-cloexec-fopen'
+  # Project doesn't use exec()
+  - '-android-cloexec-*'
 
   # Project is single threaded
   - '-concurrency-mt-unsafe'
