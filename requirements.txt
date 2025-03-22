@@ -1,0 +1,9 @@
+# test dependencies
+pytest
+cryptography
+scapy
+
+# static analysis
+black
+isort
+ruff

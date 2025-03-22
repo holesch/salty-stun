@@ -121,6 +121,16 @@ int main(int argc, char *argv[]) {
                 log_errnum_error("sendto");
             }
         }
+#ifdef TEST
+        else {
+            // when under test, send a zero-length packet to signal the error
+            len = sendto(sockfd, NULL, 0, 0, (struct sockaddr *)&ctx.outer_remote_addr,
+                    src_addr_len);
+            if (len < 0) {
+                log_errnum_error("sendto");
+            }
+        }
+#endif
     }
 
     return 0;

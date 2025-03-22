@@ -52,8 +52,7 @@ version_data.set_quoted('SALTY_STUN_VERSION', meson.project_version())
 configure_file(output: 'version.h', configuration: version_data)
 config_dir = include_directories('.')
 
-exe = executable(
-    'salty-stun',
+salty_stun_dep = declare_dependency(
     sources: [
         'src/args.c',
         'src/main.c',
@@ -71,9 +70,31 @@ exe = executable(
         'lib/cdsa/hashtable.c',
     ],
     include_directories: ['src', config_dir, 'lib'],
-    install: true,
     dependencies: [sodium_dep, blake2_dep],
 )
+
+salty_stun_exe = executable(
+    'salty-stun',
+    install: true,
+    dependencies: [salty_stun_dep],
+)
+
+pytest = find_program('pytest', required: get_option('tests'))
+if pytest.found()
+    salty_stun_test_exe = executable(
+        'salty-stun-test',
+        dependencies: [salty_stun_dep],
+        c_args: ['-DTEST'],
+    )
+
+    test(
+        'salty-stun-test',
+        pytest,
+        args: ['--exitfirst', '--builddir=' + meson.current_build_dir()],
+        depends: salty_stun_test_exe,
+        workdir: meson.current_source_dir(),
+    )
+endif
 
 scdoc = find_program('scdoc', required: get_option('docs'))
 if scdoc.found()
