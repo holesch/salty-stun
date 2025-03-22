@@ -1,0 +1,63 @@
+[tool.pytest.ini_options]
+addopts = ["--quiet"]
+testpaths = ["tests"]
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff.lint]
+select = [
+    # flake8-2020
+    "YTT",
+    # flake8-bugbear
+    "B",
+    # flake8-builtins
+    "A",
+    # flake8-comprehensions
+    "C4",
+    # flake8-implicit-str-concat
+    "ISC",
+    # flake8-logging
+    "LOG",
+    # flake8-logging-format
+    "G",
+    # flake8-pie
+    "PIE",
+    # flake8-print
+    "T20",
+    # flake8-pytest-style
+    "PT",
+    # flake8-raise
+    "RSE",
+    # flake8-self
+    "SLF",
+    # flake8-simplify
+    "SIM",
+    # flake8-unused-arguments
+    "ARG",
+    # flake8-use-pathlib
+    "PTH",
+    # flynt
+    "FLY",
+    # isort
+    "I",
+    # pep8-naming
+    "N",
+    # Pyflakes
+    "F",
+    # Pylint
+    "PL",
+    # pyupgrade
+    "UP",
+    # refurb
+    "FURB",
+    # Ruff-specific rules
+    "RUF",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = [
+    # "{name} imported but unused"
+    # -> modules are imported in __init__.py to re-export them
+    "F401",
+]

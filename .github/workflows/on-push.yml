@@ -29,6 +29,12 @@ jobs:
           pip install -r requirements.txt
       - name: Run static checks
         run: ./scripts/check
+      - name: Lint with Ruff
+        run: ruff check --output-format concise tests
+      - name: Check format with Black
+        run: black --check tests
+      - name: Check import statement order with isort
+        run: isort --check tests
       - name: Build
         run: |
           meson setup --werror -Dtests=enabled -Ddocs=enabled builddir
