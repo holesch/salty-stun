@@ -3,7 +3,7 @@ name: on-push
 on: [push]
 
 jobs:
-  static_checks:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +21,18 @@ jobs:
             libsodium-dev \
             libb2-dev \
             ninja-build \
+            lcov \
+            python3-pip \
+            scdoc \
+            wireguard-tools \
             ;
+          pip install -r requirements.txt
       - name: Run static checks
         run: ./scripts/check
+      - name: Build
+        run: |
+          meson setup --werror -Dtests=enabled -Ddocs=enabled builddir
+          meson compile -C builddir
+      - name: Test
+        run: |
+          meson test -C builddir --print-errorlogs
