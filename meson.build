@@ -3,7 +3,7 @@ project(
     'c',
     version: '0.1.0',
     meson_version: '>=1.3',
-    default_options: ['c_std=c11', 'warning_level=3'],
+    default_options: ['c_std=c11', 'warning_level=3', 'b_ndebug=if-release'],
 )
 add_project_arguments('-D_DEFAULT_SOURCE', language: 'c')
 
