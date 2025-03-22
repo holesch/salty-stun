@@ -205,7 +205,7 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
 
     // msg.timestamp := Aead(κ, 0, Timestamp(), Hi)
     uint8_t timestamp[sizeof(req->timestamp_tagged) - AEAD_TAG_SIZE];
-    aead_decrypt(timestamp, encryption_key, 0, req->timestamp_tagged,
+    err = aead_decrypt(timestamp, encryption_key, 0, req->timestamp_tagged,
             sizeof(req->timestamp_tagged), hash, sizeof(hash));
     if (err) {
         log_warn("error decrypting timestamp");
