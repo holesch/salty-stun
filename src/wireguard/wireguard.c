@@ -369,7 +369,8 @@ static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
 
     err = ip_handle_request(ctx);
     if (err) {
-        return 1;
+        // send keepalive packet
+        packet_set_len(&ctx->response, 0);
     }
 
     struct transport_data *resp = packet_push_head(&ctx->response, sizeof(*resp));

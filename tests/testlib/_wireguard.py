@@ -248,6 +248,10 @@ class WireGuardSession:
         # check padding
         assert len(decrypted) % 16 == 0
 
+        if not decrypted:
+            # keep-alive packet
+            return None
+
         padded_pkt = scapy.IP(decrypted)
 
         return scapy.IP(decrypted[: padded_pkt[scapy.IP].len])

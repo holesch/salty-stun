@@ -16,6 +16,6 @@ def test_ping(wireguard_session):
     assert response == expected_response
 
 
-def test_ip_wrong_version(salty_stun_socket, wireguard_session):
-    wireguard_session.send(b"\x00")
-    assert not salty_stun_socket.recv(4096)
+def test_ip_too_short(wireguard_session):
+    response = wireguard_session.request(b"\x45")
+    assert not response
