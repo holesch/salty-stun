@@ -55,7 +55,7 @@ int ip_handle_request(struct context *ctx) {
         return 1;
     }
 
-    int more_fragments = req->flags_fragment_offset & IP_MORE_FRAGMENTS_MASK;
+    int more_fragments = be16toh(req->flags_fragment_offset) & IP_MORE_FRAGMENTS_MASK;
     if (more_fragments) {
         log_warn("Dropping fragmented IP packet");
         return 1;
