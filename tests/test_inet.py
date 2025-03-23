@@ -1,4 +1,6 @@
+import pytest
 import scapy.all as scapy
+import scapy.contrib.stun as scapy_stun
 
 
 def test_ping(wireguard_session):
@@ -80,4 +82,38 @@ def test_icmp_wrong_checksum(wireguard_session):
     ping = scapy.IP(scapy.raw(ping))
     ping[scapy.ICMP].chksum += 1
     response = wireguard_session.request(ping)
+    assert not response
+
+
+def test_udp_too_short(wireguard_session):
+    request = scapy.IP(proto=17) / b"\x08"
+    response = wireguard_session.request(request)
+    assert not response
+
+
+def test_udp_wrong_length(wireguard_session):
+    request = (
+        scapy.IP() / scapy.UDP() / scapy_stun.STUN(stun_message_type="Binding request")
+    )
+    request = scapy.IP(scapy.raw(request))
+    request[scapy.UDP].len += 1
+    response = wireguard_session.request(request)
+    assert not response
+
+
+def test_udp_unsupported_port(wireguard_session):
+    request = scapy.IP() / scapy.UDP(dport=1234) / b"payload"
+    response = wireguard_session.request(request)
+    assert not response
+
+
+@pytest.mark.xfail(reason="Checksum is not checked for UDP")
+def test_udp_wrong_checksum(wireguard_session):
+    request = (
+        scapy.IP() / scapy.UDP() / scapy_stun.STUN(stun_message_type="Binding request")
+    )
+    # calculate checksums
+    request = scapy.IP(scapy.raw(request))
+    request[scapy.UDP].chksum += 1
+    response = wireguard_session.request(request)
     assert not response
