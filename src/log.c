@@ -82,31 +82,41 @@ void log_log_errnum(
 }
 
 static void print_meta(enum log_level level, const char *file, int line) {
-    static const struct {
-        const char *name;
-        const char *color;
-    } level_infos[] = {
-        [LOG_DEBUG] = { "DEBUG", C_BRIGHT_BLACK },
-        [LOG_INFO] = { "INFO", C_RESET },
-        [LOG_WARN] = { "WARN", C_YELLOW },
-        [LOG_ERROR] = { "ERROR", C_RED },
-    };
-
-    // format current time
-    struct tm time = { 0 };
-    long msec = 0;
-    get_local_time(&time, &msec);
-    char time_str[sizeof("23:59:59")];
-    time_str[strftime(time_str, sizeof(time_str), "%H:%M:%S", &time)] = '\0';
-
     if (g_is_color_enabled) {
+        static const struct {
+            const char *name;
+            const char *color;
+        } level_infos[] = {
+            [LOG_DEBUG] = { "DEBUG", C_BRIGHT_BLACK },
+            [LOG_INFO] = { "INFO", C_RESET },
+            [LOG_WARN] = { "WARN", C_YELLOW },
+            [LOG_ERROR] = { "ERROR", C_RED },
+        };
+
+        // format current time
+        struct tm time = { 0 };
+        long msec = 0;
+        get_local_time(&time, &msec);
+        char time_str[sizeof("1970-12-31 23:59:59")];
+        time_str[strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &time)] =
+                '\0';
+
         // print time, file, line and set message color
         (void)fprintf(stderr, "%s.%03li " C_BRIGHT_BLACK "%s:%d:%s ", time_str, msec,
                 file, line, level_infos[level].color);
     } else {
-        // print time, file, line and level
-        (void)fprintf(stderr, "%s.%03li %-5s %s:%d: ", time_str, msec,
-                level_infos[level].name, file, line);
+        static const struct {
+            const char *name;
+            const char *prefix;
+        } level_prefixes[] = {
+            [LOG_DEBUG] = { "DEBUG", "<7>" },
+            [LOG_INFO] = { "INFO", "<6>" },
+            [LOG_WARN] = { "WARN", "<4>" },
+            [LOG_ERROR] = { "ERROR", "<3>" },
+        };
+
+        // print level, file and line
+        (void)fprintf(stderr, "%s%s:%d: ", level_prefixes[level].prefix, file, line);
     }
 }
 
