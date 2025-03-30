@@ -94,11 +94,19 @@ if pytest.found()
         include_directories: ['src'],
     )
 
+    test_args_exe = executable(
+        'test-args',
+        'src/args.c',
+        'tests/test_args.c',
+        include_directories: ['src'],
+        dependencies: [sodium_dep],
+    )
+
     test(
         'salty-stun-test',
         pytest,
         args: ['--exitfirst', '--builddir=' + meson.current_build_dir()],
-        depends: [salty_stun_test_exe, test_log_exe],
+        depends: [salty_stun_test_exe, test_log_exe, test_args_exe],
         workdir: meson.current_source_dir(),
     )
 endif

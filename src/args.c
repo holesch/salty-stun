@@ -22,7 +22,8 @@ _Noreturn static void usage_error(const char *fmt, ...);
 _Noreturn static void usage_error_errnum(const char *fmt, ...);
 
 static const char USAGE[] =
-        "usage: salty-stun [-hV] [-p PORT] [-k KEY_FILE] [-K KEY_LOG] [-l LEVEL] [-n MAX_SESSIONS]\n";
+        "usage: salty-stun [-hV] [-p PORT] [-k KEY_FILE] [-K KEY_LOG] [-l LEVEL]\n"
+        "                  [-n MAX_SESSIONS]\n";
 static const char HELP[] =
         "\n"
         "A STUN server running inside a WireGuard tunnel, returning the transport\n"
@@ -34,8 +35,8 @@ static const char HELP[] =
         "  -p PORT          listen on UDP port PORT (default %d)\n"
         "  -k KEY_FILE      read private key from KEY_FILE (default\n"
         "                   %s)\n"
-        "  -K KEY_LOG       write keys to KEY_LOG, which can be used to decrypt the traffic\n"
-        "                   later\n"
+        "  -K KEY_LOG       write keys to KEY_LOG, which can be used to decrypt the\n"
+        "                   traffic later\n"
         "  -l LEVEL         set log level to LEVEL (between 0 and 3)\n"
         "  -n MAX_SESSIONS  maximum number of WireGuard sessions (default %zu)\n"
         "";

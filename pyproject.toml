@@ -61,3 +61,8 @@ select = [
     # -> modules are imported in __init__.py to re-export them
     "F401",
 ]
+"tests/**.py" = [
+    # "Magic value used in comparison"
+    # -> magic values are OK for tests
+    "PLR2004",
+]
