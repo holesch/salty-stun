@@ -11,6 +11,8 @@
     ((const struct state_mem_session *)((const char *)(node_) - \
             offsetof(struct state_mem_session, node)))
 
+#define INVALID_TIME INT64_MAX
+
 static int store_new_session(
         struct wireguard_state *state, struct wireguard_session *session);
 static struct wireguard_session *get_session_by_local_index(
@@ -31,6 +33,10 @@ struct wireguard_state *state_mem_init(struct state_mem *state_mem,
     state_mem->state.store_new_session = store_new_session;
     state_mem->state.get_session_by_local_index = get_session_by_local_index;
 
+    for (size_t i = 0; i < session_count; i++) {
+        state_mem->sessions[i].session.created_at = INVALID_TIME;
+    }
+
     return &state_mem->state;
 }
 
@@ -42,7 +48,7 @@ static int store_new_session(
     struct state_mem_session *state_session =
             &state_mem->sessions[state_mem->next_session_index];
 
-    if (state_session->session.created_at != 0) {
+    if (state_session->session.created_at != INVALID_TIME) {
         double age = difftime(now, state_session->session.created_at);
         if (age < WIREGUARD_REJECT_AFTER_TIME) {
             log_warn("Cannot store more than %d active WireGuard sessions",
