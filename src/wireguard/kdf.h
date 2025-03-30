@@ -1,12 +1,15 @@
 #ifndef KDF_H_
 #define KDF_H_
 
+#include <blake2.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include "wireguard/hmac.h"
+
 enum {
-    KDF_KEY_SIZE = 32,
-    KDF_OUTPUT_SIZE = 32,
+    KDF_KEY_SIZE = HMAC_KEY_SIZE,
+    KDF_OUTPUT_SIZE = BLAKE2S_OUTBYTES,
 };
 
 struct kdf_state {
