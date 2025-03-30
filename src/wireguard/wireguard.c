@@ -1,5 +1,6 @@
 #include "wireguard.h"
 
+#include <endian.h>
 #include <sodium.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -341,15 +342,16 @@ static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
 
     // msg.counter := N send m
     // TODO sliding window
-    if (req->counter != session->recv_counter) {
+    uint64_t msg_counter = le64toh(req->counter);
+    if (msg_counter != session->recv_counter) {
         log_warn("counter mismatch: expected %lu, got %lu", session->recv_counter,
-                req->counter);
+                msg_counter);
         // return 1;
     }
 
     // msg.packet := Aead(T send m , N send m , P, ϵ)
     size_t ciphertext_len = ctx->request.len;
-    int err = aead_decrypt(req->packet, session->recv_key, req->counter, req->packet,
+    int err = aead_decrypt(req->packet, session->recv_key, msg_counter, req->packet,
             ciphertext_len, NULL, 0);
     if (err) {
         log_warn("error decrypting packet");
@@ -385,12 +387,12 @@ static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
     packet_pad(&ctx->response, sizeof(*resp));
 
     // msg.counter := N send m
-    resp->counter = session->send_counter;
+    resp->counter = htole64(session->send_counter);
 
     // msg.packet := Aead(T send m , N send m , P, ϵ)
     size_t plaintext_len = ctx->response.len - sizeof(*resp);
     packet_push_tail(&ctx->response, AEAD_TAG_SIZE);
-    aead_encrypt(resp->packet, session->send_key, resp->counter, resp->packet,
+    aead_encrypt(resp->packet, session->send_key, session->send_counter, resp->packet,
             plaintext_len, NULL, 0);
 
     // N send m := N send m + 1
