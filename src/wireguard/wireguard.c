@@ -28,8 +28,7 @@ enum {
 };
 
 struct handshake_request {
-    uint8_t type;
-    uint8_t reserved[3];
+    uint32_t type;
     uint32_t sender;
     uint8_t ephemeral[DH_PUBLIC_KEY_SIZE];
     uint8_t static_tagged[DH_PUBLIC_KEY_SIZE + AEAD_TAG_SIZE];
@@ -39,8 +38,7 @@ struct handshake_request {
 };
 
 struct handshake_response {
-    uint8_t type;
-    uint8_t reserved[3];
+    uint32_t type;
     uint32_t sender;
     uint32_t receiver;
     uint8_t ephemeral[DH_PUBLIC_KEY_SIZE];
@@ -50,8 +48,7 @@ struct handshake_response {
 };
 
 struct transport_data {
-    uint8_t type;
-    uint8_t reserved[3];
+    uint32_t type;
     uint32_t receiver;
     uint64_t counter;
     uint8_t packet[];
@@ -102,13 +99,15 @@ int wireguard_init(struct wireguard *wg, const uint8_t *private_key, FILE *key_l
 }
 
 int wireguard_handle_request(struct wireguard *wg, struct context *ctx) {
-    uint8_t *type = packet_peak_head(&ctx->request, sizeof(*type));
-    if (!type) {
+    uint32_t *type_head = packet_peak_head(&ctx->request, sizeof(*type_head));
+    if (!type_head) {
         log_warn("wireguard message is too short");
         return 1;
     }
 
-    switch (*type) {
+    uint32_t type = le32toh(*type_head);
+
+    switch (type) {
     case WG_TYPE_INITIATION:
         log_debug("received initiation packet");
         return wireguard_handle_handshake(wg, ctx);
@@ -116,7 +115,7 @@ int wireguard_handle_request(struct wireguard *wg, struct context *ctx) {
         log_debug("received transport packet");
         return wireguard_handle_data(wg, ctx);
     default:
-        log_warn("unknown packet type: %d", *type);
+        log_warn("unknown packet type: %d", type);
         return 1;
     }
 }
@@ -219,8 +218,7 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
     // TODO check timestamp
 
     struct handshake_response *resp = packet_set_len(&ctx->response, sizeof(*resp));
-    resp->type = WG_TYPE_RESPONSE;
-    memset(resp->reserved, 0, sizeof(resp->reserved));
+    resp->type = htole32(WG_TYPE_RESPONSE);
 
     // msg.sender := Ir
     session.local_index = randombytes_random();
@@ -376,8 +374,7 @@ static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
     }
 
     struct transport_data *resp = packet_push_head(&ctx->response, sizeof(*resp));
-    resp->type = WG_TYPE_TRANSPORT;
-    memset(resp->reserved, 0, sizeof(resp->reserved));
+    resp->type = htole32(WG_TYPE_TRANSPORT);
 
     // receiver := Im′
     resp->receiver = session->remote_index;
