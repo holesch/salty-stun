@@ -10,6 +10,7 @@
 #include "wireguard/dh.h"
 #include "wireguard/hash.h"
 #include "wireguard/mac.h"
+#include "wireguard/sliding_window.h"
 
 #define WIREGUARD_REJECT_AFTER_TIME 180
 
@@ -18,7 +19,7 @@ struct wireguard_session {
     uint32_t remote_index;
     uint8_t recv_key[AEAD_KEY_SIZE];
     uint8_t send_key[AEAD_KEY_SIZE];
-    uint64_t recv_counter;
+    struct sliding_window recv_counter;
     uint64_t send_counter;
     time_t created_at;
 };

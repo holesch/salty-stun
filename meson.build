@@ -62,6 +62,7 @@ salty_stun_dep = declare_dependency(
         'src/wireguard/kdf.c',
         'src/wireguard/wireguard.c',
         'src/wireguard/state_mem.c',
+        'src/wireguard/sliding_window.c',
         'src/inet/ip.c',
         'src/inet/icmp.c',
         'src/inet/checksum.c',

@@ -190,7 +190,7 @@ class WireGuardSession:
         reject_after_time = 180
         self._socket.send(struct.pack("!xxxxI", reject_after_time))
 
-    def send(self, data, error=None):
+    def send(self, data, error=None, counter=None):
         # msg.receiver := Im'
         msg_receiver = self._remote_index
         if error == InjectedWireguardTransportErrors.INVALID_INDEX:
@@ -202,7 +202,7 @@ class WireGuardSession:
         data = bytes(data) + padding
 
         # msg.counter := N send m
-        msg_counter = self._send_counter
+        msg_counter = self._send_counter if counter is None else counter
 
         # msg.packet := Aead(T send m , N send m , P, ϵ)
         msg_packet = aead_encrypt(self._send_key, msg_counter, data, b"")
@@ -211,7 +211,10 @@ class WireGuardSession:
 
         # N send m := N send m + 1
         if error is None:
-            self._send_counter += 1
+            if counter is None:
+                self._send_counter += 1
+            else:
+                self._send_counter = counter + 1
 
         request = scapy_wg.Wireguard(
             message_type="transport"
@@ -223,8 +226,8 @@ class WireGuardSession:
 
         self._socket.send(bytes(request))
 
-    def request(self, data):
-        self.send(data)
+    def request(self, data, counter=None):
+        self.send(data, counter=counter)
 
         data = self._socket.recv(4096)
         response = scapy_wg.Wireguard(data)

@@ -293,7 +293,7 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
     kdf_expand(&kdf_state, session.send_key);
 
     // N send i = N recv r = N recv i = N send r := 0
-    session.recv_counter = 0;
+    session.recv_counter = SLIDING_WINDOW_INIT;
     session.send_counter = 0;
 
     session.created_at = wg->now();
@@ -339,12 +339,13 @@ static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
     }
 
     // msg.counter := N send m
-    // TODO sliding window
     uint64_t msg_counter = le64toh(req->counter);
-    if (msg_counter != session->recv_counter) {
-        log_warn("counter mismatch: expected %lu, got %lu", session->recv_counter,
-                msg_counter);
-        // return 1;
+
+    // prevent replay attacks
+    struct sliding_window new_counter = { 0 };
+    if (sliding_window_is_replay(&session->recv_counter, msg_counter, &new_counter)) {
+        log_warn("dropping already seen packet");
+        return 1;
     }
 
     // msg.packet := Aead(T send m , N send m , P, ϵ)
@@ -358,7 +359,7 @@ static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
     packet_pop_tail(&ctx->request, AEAD_TAG_SIZE);
 
     // N send m := N send m + 1
-    session->recv_counter++;
+    session->recv_counter = new_counter;
 
     packet_reserve(&ctx->response, sizeof(struct transport_data));
 

@@ -155,3 +155,30 @@ def test_session_slot_reuse(pytestconfig):
         )
 
         assert wg3.request(ping)
+
+
+def test_sliding_window_accept(salty_stun, salty_stun_socket):
+    ping = scapy.IP() / scapy.ICMP()
+
+    with testlib.WireGuardSession(salty_stun.public_key, salty_stun_socket) as wg:
+        assert wg.request(ping, counter=3)
+        assert wg.request(ping, counter=1)
+        assert wg.request(ping, counter=2)
+
+
+def test_sliding_window_too_old(salty_stun, salty_stun_socket):
+    ping = scapy.IP() / scapy.ICMP()
+
+    with testlib.WireGuardSession(salty_stun.public_key, salty_stun_socket) as wg:
+        assert wg.request(ping, counter=64)
+        wg.send(ping, counter=0)
+        assert not salty_stun_socket.recv(4096)
+
+
+def test_sliding_window_already_seen(salty_stun, salty_stun_socket):
+    ping = scapy.IP() / scapy.ICMP()
+
+    with testlib.WireGuardSession(salty_stun.public_key, salty_stun_socket) as wg:
+        assert wg.request(ping, counter=0)
+        wg.send(ping, counter=0)
+        assert not salty_stun_socket.recv(4096)
