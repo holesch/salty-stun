@@ -1,7 +1,10 @@
 #include "stun.h"
 
+#include <arpa/inet.h>
 #include <endian.h>
+#include <netinet/in.h>
 #include <stdint.h>
+#include <sys/socket.h>
 
 #include "context.h"
 #include "log.h"
@@ -42,12 +45,27 @@ struct stun_attr {
     uint8_t data[];
 };
 
-struct stun_mapped_address {
+struct stun_mapped_address_v4 {
     uint8_t reserved;
     uint8_t family;
     uint16_t port;
     uint32_t address;
 };
+
+struct stun_mapped_address_v6 {
+    uint8_t reserved;
+    uint8_t family;
+    uint16_t port;
+    uint8_t address[sizeof(struct in6_addr)];
+};
+
+static int fill_mapped_address(struct context *ctx, struct stun_packet *req);
+static void fill_mapped_address_v4(
+        struct context *ctx, struct sockaddr_in *addr, struct stun_packet *req);
+static void fill_mapped_address_v6(
+        struct context *ctx, struct sockaddr_in6 *addr, struct stun_packet *req);
+static void log_request_v4(const char *protocol_type, const struct sockaddr_in *addr);
+static void log_request_v6(const char *protocol_type, const struct sockaddr_in6 *addr);
 
 int stun_handle_request(struct context *ctx) {
     struct stun_packet *req = packet_pop_head(&ctx->request, sizeof(*req));
@@ -66,20 +84,56 @@ int stun_handle_request(struct context *ctx) {
         return 1;
     }
 
-    uint32_t remote_addr = ctx->outer_remote_addr.sin_addr.s_addr;
-    uint16_t remote_port = ctx->outer_remote_addr.sin_port;
+    packet_reserve(&ctx->response, sizeof(struct stun_packet));
 
-    size_t response_len = sizeof(struct stun_packet) + sizeof(struct stun_attr) +
-            sizeof(struct stun_mapped_address);
-    struct stun_packet *resp = packet_set_len(&ctx->response, response_len);
-    struct stun_attr *attr = (struct stun_attr *)resp->data;
-    struct stun_mapped_address *mapped_address =
-            (struct stun_mapped_address *)attr->data;
+    int err = fill_mapped_address(ctx, req);
+    if (err) {
+        return err;
+    }
+
+    size_t content_len = ctx->response.len;
+    struct stun_packet *resp = packet_push_head(&ctx->response, sizeof(*resp));
 
     resp->type = htobe16(STUN_TYPE_BINDING_RESPONSE);
-    resp->length = htobe16(sizeof(*attr) + sizeof(*mapped_address));
+    resp->length = htobe16(content_len);
     resp->magic_cookie = req->magic_cookie;
     memcpy(resp->transaction_id, req->transaction_id, sizeof(resp->transaction_id));
+
+    return 0;
+}
+
+static int fill_mapped_address(struct context *ctx, struct stun_packet *req) {
+    if (ctx->outer_remote_addr.ss_family == AF_INET6) {
+        struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)&ctx->outer_remote_addr;
+        if (IN6_IS_ADDR_V4MAPPED(&addr6->sin6_addr)) {
+            struct sockaddr_in addr4;
+            addr4.sin_family = AF_INET;
+            static const size_t mapped_addr_offset =
+                    sizeof(addr6->sin6_addr) - sizeof(addr4.sin_addr);
+            memcpy(&addr4.sin_addr, &addr6->sin6_addr.s6_addr[mapped_addr_offset],
+                    sizeof(addr4.sin_addr));
+            addr4.sin_port = addr6->sin6_port;
+            fill_mapped_address_v4(ctx, &addr4, req);
+        } else {
+            fill_mapped_address_v6(ctx, addr6, req);
+        }
+    } else if (ctx->outer_remote_addr.ss_family == AF_INET) {
+        struct sockaddr_in *addr4 = (struct sockaddr_in *)&ctx->outer_remote_addr;
+        fill_mapped_address_v4(ctx, addr4, req);
+    } else {
+        log_warn("Unknown address family: %d", ctx->outer_remote_addr.ss_family);
+        return 1;
+    }
+
+    return 0;
+}
+
+static void fill_mapped_address_v4(
+        struct context *ctx, struct sockaddr_in *addr, struct stun_packet *req) {
+    struct stun_attr *attr = packet_set_len(
+            &ctx->response, sizeof(*attr) + sizeof(struct stun_mapped_address_v4));
+    struct stun_mapped_address_v4 *mapped_address =
+            (struct stun_mapped_address_v4 *)attr->data;
 
     attr->length = htobe16(sizeof(*mapped_address));
     mapped_address->reserved = 0;
@@ -87,13 +141,57 @@ int stun_handle_request(struct context *ctx) {
 
     if (req->magic_cookie == htobe32(STUN_MAGIC_COOKIE)) {
         attr->type = htobe16(STUN_ATTR_XOR_MAPPED_ADDRESS);
-        mapped_address->port = remote_port ^ htobe16(STUN_MAGIC_COOKIE >> 16);
-        mapped_address->address = remote_addr ^ htobe32(STUN_MAGIC_COOKIE);
+        mapped_address->port = addr->sin_port ^ htobe16(STUN_MAGIC_COOKIE >> 16);
+        mapped_address->address = addr->sin_addr.s_addr ^ htobe32(STUN_MAGIC_COOKIE);
+        log_request_v4("STUN", addr);
     } else {
         attr->type = htobe16(STUN_ATTR_MAPPED_ADDRESS);
-        mapped_address->port = remote_port;
-        mapped_address->address = remote_addr;
+        mapped_address->port = addr->sin_port;
+        mapped_address->address = addr->sin_addr.s_addr;
+        log_request_v4("classic STUN", addr);
     }
+}
 
-    return 0;
+static void fill_mapped_address_v6(
+        struct context *ctx, struct sockaddr_in6 *addr, struct stun_packet *req) {
+    struct stun_attr *attr = packet_set_len(
+            &ctx->response, sizeof(*attr) + sizeof(struct stun_mapped_address_v6));
+    struct stun_mapped_address_v6 *mapped_address =
+            (struct stun_mapped_address_v6 *)attr->data;
+
+    attr->length = htobe16(sizeof(*mapped_address));
+    mapped_address->reserved = 0;
+    mapped_address->family = STUN_ADDRESS_FAMILY_IPV6;
+
+    if (req->magic_cookie == htobe32(STUN_MAGIC_COOKIE)) {
+        attr->type = htobe16(STUN_ATTR_XOR_MAPPED_ADDRESS);
+        mapped_address->port = addr->sin6_port ^ htobe16(STUN_MAGIC_COOKIE >> 16);
+        uint32_t *mapped_addr_words = (uint32_t *)mapped_address->address;
+        uint32_t *addr_words = (uint32_t *)addr->sin6_addr.s6_addr;
+        uint32_t *xor_words = &req->magic_cookie;
+        for (int i = 0; i < 4; i++) {
+            mapped_addr_words[i] = addr_words[i] ^ xor_words[i];
+        }
+        log_request_v6("STUN", addr);
+    } else {
+        attr->type = htobe16(STUN_ATTR_MAPPED_ADDRESS);
+        mapped_address->port = addr->sin6_port;
+        memcpy(mapped_address->address, addr->sin6_addr.s6_addr,
+                sizeof(mapped_address->address));
+        log_request_v6("classic STUN", addr);
+    }
+}
+
+static void log_request_v4(const char *protocol_type, const struct sockaddr_in *addr) {
+    char addr_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &addr->sin_addr, addr_str, sizeof(addr_str));
+    log_info("%s binding request from %s port %d", protocol_type, addr_str,
+            be16toh(addr->sin_port));
+}
+
+static void log_request_v6(const char *protocol_type, const struct sockaddr_in6 *addr) {
+    char addr_str[INET6_ADDRSTRLEN];
+    inet_ntop(AF_INET6, &addr->sin6_addr, addr_str, sizeof(addr_str));
+    log_info("%s binding request from %s port %d", protocol_type, addr_str,
+            be16toh(addr->sin6_port));
 }

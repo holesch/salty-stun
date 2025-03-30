@@ -8,7 +8,7 @@
 struct context {
     struct packet request;
     struct packet response;
-    struct sockaddr_in outer_remote_addr;
+    struct sockaddr_storage outer_remote_addr;
 };
 
 #endif // CONTEXT_H_

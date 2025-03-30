@@ -7,7 +7,14 @@ from . import _crypto as crypto
 
 
 class SaltyStun:
-    def __init__(self, bin_path, port=51820, key_log=False, max_sessions=None):
+    def __init__(
+        self,
+        bin_path,
+        port=51820,
+        key_log=False,
+        max_sessions=None,
+        address_family="IPv6",
+    ):
         self._args = [bin_path, "-l", "3", "-k", "-"]
         self._port = port
         self._stdout = None
@@ -17,6 +24,18 @@ class SaltyStun:
 
         if max_sessions is not None:
             self._args.extend(["-n", str(max_sessions)])
+
+        if address_family == "IPv4":
+            self._address_family = socket.AF_INET
+            self._address = ("0.0.0.0", port)
+        elif address_family == "IPv6":
+            self._address_family = socket.AF_INET6
+            self._address = ("::", port)
+        elif address_family == "Unix":
+            self._address_family = socket.AF_UNIX
+            self._address = b"\0salty-stun-test-server"
+        else:
+            raise ValueError(f"Invalid address family: {address_family}.")
 
         result = subprocess.run(["wg", "genkey"], stdout=subprocess.PIPE, check=True)
         self._private_key_b64 = result.stdout.rstrip()
@@ -32,8 +51,15 @@ class SaltyStun:
 
     def __enter__(self):
         with contextlib.ExitStack() as stack:
-            sock = stack.enter_context(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
-            sock.bind(("localhost", self._port))
+            sock = stack.enter_context(
+                socket.socket(self._address_family, socket.SOCK_DGRAM)
+            )
+
+            # disable IPv6-only mode (default is system-dependent)
+            if self._address_family == socket.AF_INET6:
+                sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+
+            sock.bind(self._address)
 
             proc = stack.enter_context(
                 subprocess.Popen(

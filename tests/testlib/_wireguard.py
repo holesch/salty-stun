@@ -265,6 +265,10 @@ class WireGuardSession:
     def private_key(self):
         return self._static_key
 
+    @property
+    def local_address(self):
+        return self._socket.getsockname()[:2]
+
 
 class Hash:
     def __init__(self, data):

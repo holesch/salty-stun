@@ -1,45 +1,59 @@
+import socket
+
+import pytest
 import scapy.all as scapy
-import scapy.contrib.stun as scapy_stun
 import testlib
+import testlib.scapy_stun_backport as scapy_stun
 
-testlib.fixup_scapy_stun()
+# requests without the magic cookie are considered classic STUN (RFC 3489)
+magic_cookie_param = pytest.mark.parametrize(
+    "magic_cookie", [scapy_stun.MAGIC_COOKIE, 0xF9BC4EC0]
+)
 
 
-def test_stun(salty_stun_socket, wireguard_session):
+@magic_cookie_param
+def test_stun(wireguard_session, magic_cookie):
+    stun_request(wireguard_session, magic_cookie)
+
+
+@magic_cookie_param
+def test_stun_ipv6(salty_stun, magic_cookie):
+    with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sock:
+        sock.connect(("::1", salty_stun.port))
+        with testlib.WireGuardSession(salty_stun.public_key, sock) as wg:
+            stun_request(wg, magic_cookie)
+
+
+@magic_cookie_param
+def test_listening_on_ipv4(pytestconfig, magic_cookie):
+    builddir = pytestconfig.getoption("builddir")
+    with testlib.SaltyStun(
+        builddir / "salty-stun-test", port=5300, address_family="IPv4"
+    ) as salty_stun, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.connect(("localhost", salty_stun.port))
+        with testlib.WireGuardSession(salty_stun.public_key, sock) as wg:
+            stun_request(wg, magic_cookie)
+
+
+def test_listening_on_unix_socket(pytestconfig):
+    builddir = pytestconfig.getoption("builddir")
+    with testlib.SaltyStun(
+        builddir / "salty-stun-test", port=None, address_family="Unix"
+    ) as salty_stun, socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+        sock.bind(b"\0salty-stun-test-client")
+        sock.connect(b"\0salty-stun-test-server")
+        with testlib.WireGuardSession(salty_stun.public_key, sock) as wg:
+            request = (
+                scapy.IP()
+                / scapy.UDP()
+                / scapy_stun.STUN(stun_message_type="Binding request")
+            )
+            request = scapy.IP(scapy.raw(request))
+            assert not wg.request(request)
+
+
+def stun_request(wireguard_session, magic_cookie):
     tid = 0x36CAE9CFAB693C4320467127
-
-    request = (
-        scapy.IP()
-        / scapy.UDP(sport=6200)
-        / scapy_stun.STUN(stun_message_type="Binding request", transaction_id=tid)
-    )
-    request = scapy.IP(scapy.raw(request))
-
-    response = wireguard_session.request(request)
-
-    local_addr, local_port = salty_stun_socket.getsockname()
-    expected_attributes = [
-        scapy_stun.STUNXorMappedAddress(xport=local_port, xip=local_addr)
-    ]
-
-    expected_response = (
-        scapy.IP(id=0)
-        / scapy.UDP(sport=3478, dport=6200, chksum=0)
-        / scapy_stun.STUN(
-            stun_message_type="Binding success response",
-            transaction_id=tid,
-            attributes=expected_attributes,
-        )
-    )
-    expected_response = scapy.IP(scapy.raw(expected_response))
-
-    assert response == expected_response
-
-
-def test_classic_stun(salty_stun_socket, wireguard_session):
-    # requests without the magic cookie are considered classic STUN (RFC 3489)
-    tid = 0x36CAE9CFAB693C4320467127
-    magic_cookie = 0xF9BC4EC0
 
     request = (
         scapy.IP()
@@ -54,35 +68,31 @@ def test_classic_stun(salty_stun_socket, wireguard_session):
 
     response = wireguard_session.request(request)
 
-    local_addr, local_port = salty_stun_socket.getsockname()
-    expected_attributes = [STUNMappedAddress(port=local_port, ip=local_addr)]
+    local_addr, local_port = wireguard_session.local_address
+    address_family = "IPv6" if ":" in local_addr else "IPv4"
+
+    if magic_cookie == scapy_stun.MAGIC_COOKIE:
+        expected_attribute = scapy_stun.STUNXorMappedAddress(
+            address_family=address_family, xport=local_port, xip=local_addr
+        )
+    else:
+        expected_attribute = scapy_stun.STUNMappedAddress(
+            address_family=address_family, port=local_port, ip=local_addr
+        )
 
     expected_response = (
         scapy.IP(id=0)
-        / scapy.UDP(sport=3478, dport=6200, chksum=0)
+        / scapy.UDP(dport=6200, chksum=0)
         / scapy_stun.STUN(
             stun_message_type="Binding success response",
             magic_cookie=magic_cookie,
             transaction_id=tid,
-            attributes=expected_attributes,
+            attributes=[expected_attribute],
         )
     )
     expected_response = scapy.IP(scapy.raw(expected_response))
 
     assert response == expected_response
-
-
-class STUNMappedAddress(scapy_stun.STUNGenericTlv):
-    name = "STUN Mapped Address"
-
-    fields_desc = [  # noqa: RUF012
-        scapy.XShortField("type", 0x0001),
-        scapy.ShortField("length", 8),
-        scapy.ByteField("RESERVED", 0),
-        scapy.ByteField("address_family", 0x01),  # IPv4
-        scapy.ShortField("port", 0),
-        scapy.IPField("ip", 0),
-    ]
 
 
 def test_stun_too_short(wireguard_session):

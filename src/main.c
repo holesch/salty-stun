@@ -20,6 +20,7 @@
 #include "wireguard/state_mem.h"
 #include "wireguard/wireguard.h"
 
+static int create_udp_server(uint16_t port);
 static time_t now_func(void);
 static int handle_add_fake_time_request(struct packet *request);
 static void send_message(int socket, const void *message, size_t length,
@@ -66,21 +67,7 @@ int main(int argc, char *argv[]) {
 
     int sockfd = args.sockfd;
     if (sockfd == -1) {
-        // create UDP server
-        sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (sockfd < 0) {
-            log_errnum_error("socket");
-            return 1;
-        }
-
-        struct sockaddr_in addr;
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(args.port);
-        addr.sin_addr.s_addr = INADDR_ANY;
-        if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-            log_errnum_error("bind");
-            return 1;
-        }
+        sockfd = create_udp_server(args.port);
         log_info("Listening on port %d", args.port);
     }
 
@@ -117,19 +104,12 @@ int main(int argc, char *argv[]) {
         packet_init(&ctx.request, request_buffer.bytes, len);
         packet_init(&ctx.response, response_buffer.bytes, sizeof(response_buffer));
 
-        char ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &ctx.outer_remote_addr.sin_addr, ip, INET_ADDRSTRLEN);
-        log_debug("received %zu bytes from %s:%d", ctx.request.len, ip,
-                ntohs(ctx.outer_remote_addr.sin_port));
-
         if (handle_add_fake_time_request(&ctx.request)) {
             continue;
         }
 
         int err = wireguard_handle_request(&wg, &ctx);
         if (!err && ctx.response.len != 0) {
-            log_debug("sending %zu bytes to %s:%d", ctx.response.len, ip,
-                    ntohs(ctx.outer_remote_addr.sin_port));
             send_message(sockfd, ctx.response.head, ctx.response.len,
                     (struct sockaddr *)&ctx.outer_remote_addr, src_addr_len);
         }
@@ -143,6 +123,27 @@ int main(int argc, char *argv[]) {
     }
 
     return 0;
+}
+
+static int create_udp_server(uint16_t port) {
+    int sockfd = socket(AF_INET6, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        log_errnum_error("socket");
+        exit(1);
+    }
+
+    struct sockaddr_in6 addr = { 0 };
+    addr.sin6_family = AF_INET6;
+    addr.sin6_addr = in6addr_any;
+    addr.sin6_port = htons(port);
+
+    int err = bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
+    if (err < 0) {
+        log_errnum_error("bind");
+        exit(1);
+    }
+
+    return sockfd;
 }
 
 static time_t now_func(void) {
