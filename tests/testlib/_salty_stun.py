@@ -1,5 +1,6 @@
 import base64
 import contextlib
+import socket
 import subprocess
 
 from . import _crypto as crypto
@@ -7,7 +8,7 @@ from . import _crypto as crypto
 
 class SaltyStun:
     def __init__(self, bin_path, port=51820, key_log=False, max_sessions=None):
-        self._args = [bin_path, "-l", "3", "-k", "-", "-p", str(port)]
+        self._args = [bin_path, "-l", "3", "-k", "-"]
         self._port = port
         self._stdout = None
 
@@ -31,9 +32,15 @@ class SaltyStun:
 
     def __enter__(self):
         with contextlib.ExitStack() as stack:
+            sock = stack.enter_context(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
+            sock.bind(("localhost", self._port))
+
             proc = stack.enter_context(
                 subprocess.Popen(
-                    self._args, stdin=subprocess.PIPE, stdout=subprocess.PIPE
+                    [*self._args, "-f", str(sock.fileno())],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    pass_fds=[sock.fileno()],
                 )
             )
             stack.callback(proc.terminate)

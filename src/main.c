@@ -56,22 +56,25 @@ int main(int argc, char *argv[]) {
     struct wireguard wg;
     wireguard_init(&wg, args.private_key, args.key_log, state, now_func);
 
-    // create UDP server
-    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) {
-        log_errnum_error("socket");
-        return 1;
-    }
+    int sockfd = args.sockfd;
+    if (sockfd == -1) {
+        // create UDP server
+        sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sockfd < 0) {
+            log_errnum_error("socket");
+            return 1;
+        }
 
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(args.port);
-    addr.sin_addr.s_addr = INADDR_ANY;
-    if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        log_errnum_error("bind");
-        return 1;
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(args.port);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+            log_errnum_error("bind");
+            return 1;
+        }
+        log_info("Listening on port %d", args.port);
     }
-    log_info("Listening on port %d", args.port);
 
     static ALIGNED_BUFFER(request_buffer, 4096);
     static ALIGNED_BUFFER(response_buffer, 4096);

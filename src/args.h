@@ -12,6 +12,7 @@ struct args {
     FILE *key_log;
     enum log_level level;
     size_t max_sessions;
+    int sockfd;
 };
 
 void parse_args(int argc, char *argv[], struct args *args);

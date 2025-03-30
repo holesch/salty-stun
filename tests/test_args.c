@@ -18,6 +18,8 @@ int main(int argc, char **argv) {
 
     printf("%zu\n", args.max_sessions);
 
+    printf("%d\n", args.sockfd);
+
     if (args.key_log) {
         (void)fprintf(args.key_log, "key log\n");
         (void)fflush(args.key_log);

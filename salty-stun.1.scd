@@ -47,6 +47,10 @@ NATs.
 	Set the maximum number of concurrent sessions to _max_sessions_ (default
 	1024).
 
+*-f* _fd_
+	Accept incoming connections on file descriptor _fd_ instead of creating a
+	new socket.
+
 # EXAMPLE
 
 Generate a private key:

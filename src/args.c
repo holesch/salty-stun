@@ -39,9 +39,10 @@ static const char HELP[] =
         "                   traffic later\n"
         "  -l LEVEL         set log level to LEVEL (between 0 and 3)\n"
         "  -n MAX_SESSIONS  maximum number of WireGuard sessions (default %zu)\n"
+        "  -f FD            listen on socket FD instead of creating a new socket\n"
         "";
 static const char VERSION[] = "salty-stun " SALTY_STUN_VERSION "\n";
-static const char OPTSTRING[] = ":hVp:k:K:l:n:";
+static const char OPTSTRING[] = ":hVp:k:K:l:n:f:";
 
 static const char DEFAULT_KEY_FILE[] = "/etc/salty-stun/private-key";
 static const uint16_t DEFAULT_PORT = 51820;
@@ -53,6 +54,7 @@ void parse_args(int argc, char *argv[], struct args *args) {
     args->key_log = NULL;
     args->level = LOG_INFO;
     args->max_sessions = DEFAULT_MAX_SESSIONS;
+    args->sockfd = -1;
 
     int opt = 0;
     while ((opt = getopt(argc, argv, OPTSTRING)) != -1) {
@@ -93,6 +95,13 @@ void parse_args(int argc, char *argv[], struct args *args) {
             unsigned long max_sessions = SIZE_MAX;
             args->max_sessions = handle_ulong_option(optarg, min_sessions, max_sessions,
                     "-n: invalid number of sessions");
+            break;
+        }
+        case 'f': {
+            unsigned long min_fd = 0;
+            unsigned long max_fd = INT_MAX;
+            args->sockfd = (int)handle_ulong_option(
+                    optarg, min_fd, max_fd, "-f: invalid file descriptor");
             break;
         }
         case ':':
