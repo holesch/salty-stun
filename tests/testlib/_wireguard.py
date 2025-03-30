@@ -25,11 +25,11 @@ class InjectedWireguardTransportErrors(enum.Enum):
 
 
 class WireGuardSession:
-    def __init__(self, remote_public_key, socket):
+    def __init__(self, remote_public_key, socket, my_index=89):
         self._static_key = dh_generate()
         self._remote_public_key = remote_public_key
         self._socket = socket
-        self._my_index = 89
+        self._my_index = my_index
         self._chaining_key = None
         self._hash = None
         self._ephemeral = None
@@ -186,7 +186,9 @@ class WireGuardSession:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        pass
+        # make session time out
+        reject_after_time = 180
+        self._socket.send(struct.pack("!xxxxI", reject_after_time))
 
     def send(self, data, error=None):
         # msg.receiver := Im'

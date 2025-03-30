@@ -88,3 +88,70 @@ def udp_socket(port):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.connect(("localhost", port))
         yield sock
+
+
+def test_multiple_sessions(pytestconfig):
+    builddir = pytestconfig.getoption("builddir")
+    ping = scapy.IP() / scapy.ICMP()
+
+    with contextlib.ExitStack() as stack:
+        salty_stun = stack.enter_context(
+            testlib.SaltyStun(builddir / "salty-stun-test", port=5201, max_sessions=2)
+        )
+        sock = stack.enter_context(udp_socket(5201))
+
+        wg1 = stack.enter_context(
+            testlib.WireGuardSession(salty_stun.public_key, sock, my_index=1)
+        )
+        wg2 = stack.enter_context(
+            testlib.WireGuardSession(salty_stun.public_key, sock, my_index=2)
+        )
+
+        assert wg1.request(ping)
+        assert wg2.request(ping)
+
+
+def test_too_many_sessions(pytestconfig):
+    builddir = pytestconfig.getoption("builddir")
+
+    with contextlib.ExitStack() as stack:
+        salty_stun = stack.enter_context(
+            testlib.SaltyStun(builddir / "salty-stun-test", port=5202, max_sessions=2)
+        )
+        sock = stack.enter_context(udp_socket(5202))
+
+        stack.enter_context(
+            testlib.WireGuardSession(salty_stun.public_key, sock, my_index=1)
+        )
+        stack.enter_context(
+            testlib.WireGuardSession(salty_stun.public_key, sock, my_index=2)
+        )
+
+        wg = testlib.WireGuardSession(salty_stun.public_key, sock, my_index=3)
+        wg.send_handshake()
+        assert not sock.recv(4096)
+
+
+def test_session_slot_reuse(pytestconfig):
+    builddir = pytestconfig.getoption("builddir")
+    ping = scapy.IP() / scapy.ICMP()
+
+    with contextlib.ExitStack() as stack:
+        salty_stun = stack.enter_context(
+            testlib.SaltyStun(builddir / "salty-stun-test", port=5203, max_sessions=2)
+        )
+        sock = stack.enter_context(udp_socket(5203))
+
+        with testlib.WireGuardSession(salty_stun.public_key, sock, my_index=1) as wg1:
+            wg2 = stack.enter_context(
+                testlib.WireGuardSession(salty_stun.public_key, sock, my_index=2)
+            )
+
+            assert wg1.request(ping)
+            assert wg2.request(ping)
+
+        wg3 = stack.enter_context(
+            testlib.WireGuardSession(salty_stun.public_key, sock, my_index=3)
+        )
+
+        assert wg3.request(ping)

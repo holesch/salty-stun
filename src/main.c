@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <assert.h>
+#include <endian.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -20,6 +21,9 @@
 #include "wireguard/wireguard.h"
 
 static time_t now_func(void);
+static int handle_add_fake_time_request(struct packet *request);
+static void send_message(int socket, const void *message, size_t length,
+        const struct sockaddr *dest_addr, socklen_t dest_len);
 static void setup_signal_handling(void);
 static void signal_handler(int signum);
 static void die_on_signal(void);
@@ -27,6 +31,10 @@ static void poll_or_die(struct pollfd *fds, nfds_t nfds);
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static int g_signal_pipe[2];
+#ifdef TEST
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static time_t g_fake_time;
+#endif
 
 int main(int argc, char *argv[]) {
     struct args args;
@@ -114,24 +122,22 @@ int main(int argc, char *argv[]) {
         log_debug("received %zu bytes from %s:%d", ctx.request.len, ip,
                 ntohs(ctx.outer_remote_addr.sin_port));
 
+        if (handle_add_fake_time_request(&ctx.request)) {
+            continue;
+        }
+
         int err = wireguard_handle_request(&wg, &ctx);
         if (!err && ctx.response.len != 0) {
             log_debug("sending %zu bytes to %s:%d", ctx.response.len, ip,
                     ntohs(ctx.outer_remote_addr.sin_port));
-            len = sendto(sockfd, ctx.response.head, ctx.response.len, 0,
+            send_message(sockfd, ctx.response.head, ctx.response.len,
                     (struct sockaddr *)&ctx.outer_remote_addr, src_addr_len);
-            if (len < 0) {
-                log_errnum_error("sendto");
-            }
         }
 #ifdef TEST
         else {
             // when under test, send a zero-length packet to signal the error
-            len = sendto(sockfd, NULL, 0, 0, (struct sockaddr *)&ctx.outer_remote_addr,
+            send_message(sockfd, NULL, 0, (struct sockaddr *)&ctx.outer_remote_addr,
                     src_addr_len);
-            if (len < 0) {
-                log_errnum_error("sendto");
-            }
         }
 #endif
     }
@@ -140,6 +146,9 @@ int main(int argc, char *argv[]) {
 }
 
 static time_t now_func(void) {
+#ifdef TEST
+    return g_fake_time;
+#else
 #ifdef CLOCK_BOOTTIME
     clockid_t clockid = CLOCK_BOOTTIME;
 #else
@@ -148,6 +157,35 @@ static time_t now_func(void) {
     struct timespec ts;
     (void)clock_gettime(clockid, &ts);
     return ts.tv_sec;
+#endif
+}
+
+static int handle_add_fake_time_request(struct packet *request) {
+#ifdef TEST
+    struct add_fake_time_request {
+        uint8_t type;
+        uint8_t reserved[3];
+        uint32_t fake_time;
+    } *req = packet_peak_head(request, sizeof(*req));
+    if (!req || req->type != 0) {
+        return 0;
+    }
+
+    g_fake_time += be32toh(req->fake_time);
+    log_info("Setting fake time to %u", g_fake_time);
+    return 1;
+#else
+    (void)request;
+    return 0;
+#endif
+}
+
+static void send_message(int socket, const void *message, size_t length,
+        const struct sockaddr *dest_addr, socklen_t dest_len) {
+    ssize_t len = sendto(socket, message, length, 0, dest_addr, dest_len);
+    if (len < 0) {
+        log_errnum_error("sendto");
+    }
 }
 
 static void setup_signal_handling(void) {
