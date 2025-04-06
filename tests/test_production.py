@@ -58,7 +58,7 @@ def test_production_stun(wg_session):
 
     expected_response = (
         scapy.IP(id=0)
-        / scapy.UDP(chksum=0)
+        / scapy.UDP()
         / scapy_stun.STUN(
             stun_message_type="Binding success response",
             transaction_id=request.transaction_id,

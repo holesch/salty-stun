@@ -29,6 +29,9 @@ Checks:
 
   # clang-analyzer bug: https://github.com/llvm/llvm-project/issues/40656
   - '-clang-analyzer-valist.Uninitialized'
+
+  # Too strict
+  - '-bugprone-easily-swappable-parameters'
 CheckOptions:
   bugprone-misplaced-widening-cast.CheckImplicitCasts: '1'
   bugprone-suspicious-enum-usage.StrictMode: '1'

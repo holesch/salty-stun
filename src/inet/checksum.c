@@ -4,8 +4,8 @@
 
 static uint32_t fold_sum(uint32_t sum);
 
-uint16_t inet_checksum(const void *data, size_t len) {
-    uint32_t sum = 0;
+uint16_t inet_checksum(const void *data, size_t len, uint32_t initial_sum) {
+    uint32_t sum = initial_sum;
     const uint16_t *data16 = data;
     while (len >= sizeof(*data16)) {
         sum += *data16++;

@@ -37,7 +37,7 @@ int icmp_handle_request(struct context *ctx) {
     }
 
     size_t payload_len = ctx->request.len;
-    if (inet_checksum((void *)req, sizeof(*req) + payload_len) != 0) {
+    if (inet_checksum((void *)req, sizeof(*req) + payload_len, 0) != 0) {
         log_warn("ICMP request checksum is incorrect");
         return 1;
     }
@@ -51,7 +51,7 @@ int icmp_handle_request(struct context *ctx) {
     resp->sequence_number = req->sequence_number;
     memcpy(resp->payload, req->payload, payload_len);
 
-    resp->checksum = inet_checksum((void *)resp, sizeof(*resp) + payload_len);
+    resp->checksum = inet_checksum((void *)resp, sizeof(*resp) + payload_len, 0);
 
     return 0;
 }

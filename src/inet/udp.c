@@ -3,6 +3,7 @@
 #include <endian.h>
 #include <stdint.h>
 
+#include "checksum.h"
 #include "context.h"
 #include "log.h"
 #include "packet.h"
@@ -20,7 +21,7 @@ struct udp_packet {
     uint8_t data[];
 };
 
-int udp_handle_request(struct context *ctx) {
+int udp_handle_request(struct context *ctx, uint32_t ip_header_sum) {
     int err = 0;
 
     struct udp_packet *req = packet_pop_head(&ctx->request, sizeof(*req));
@@ -35,6 +36,15 @@ int udp_handle_request(struct context *ctx) {
         log_warn("UDP length is incorrect: expected %zu, got %u", total_len,
                 be16toh(req->length));
         return 1;
+    }
+
+    if (be16toh(req->checksum) != 0) {
+        uint32_t initial_sum = ip_header_sum + req->length;
+        uint16_t checksum = inet_checksum((void *)req, total_len, initial_sum);
+        if (checksum != 0) {
+            log_warn("UDP checksum is incorrect");
+            return 1;
+        }
     }
 
     packet_reserve(&ctx->response, sizeof(struct udp_packet));
@@ -57,6 +67,12 @@ int udp_handle_request(struct context *ctx) {
     resp->destination_port = req->source_port;
     resp->length = htobe16(ctx->response.len);
     resp->checksum = 0;
+
+    uint32_t initial_sum = ip_header_sum + resp->length;
+    resp->checksum = inet_checksum((void *)resp, ctx->response.len, initial_sum);
+    if (resp->checksum == 0) {
+        resp->checksum = UINT16_MAX;
+    }
 
     return 0;
 }

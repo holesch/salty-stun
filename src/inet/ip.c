@@ -35,6 +35,8 @@ struct ip_packet {
     uint8_t data[];
 };
 
+static uint32_t calculate_ipv4_pseudo_header_sum(const struct ip_packet *req);
+
 int ip_handle_request(struct context *ctx) {
     int err = 0;
 
@@ -50,7 +52,7 @@ int ip_handle_request(struct context *ctx) {
         return 1;
     }
 
-    if (inet_checksum((void *)req, sizeof(*req)) != 0) {
+    if (inet_checksum((void *)req, sizeof(*req), 0) != 0) {
         log_warn("IP checksum is incorrect");
         return 1;
     }
@@ -76,9 +78,11 @@ int ip_handle_request(struct context *ctx) {
     case IP_PROTOCOL_ICMP:
         err = icmp_handle_request(ctx);
         break;
-    case IP_PROTOCOL_UDP:
-        err = udp_handle_request(ctx);
+    case IP_PROTOCOL_UDP: {
+        uint32_t ip_header_sum = calculate_ipv4_pseudo_header_sum(req);
+        err = udp_handle_request(ctx, ip_header_sum);
         break;
+    }
     default:
         log_warn("Unsupported IP protocol: %d", req->protocol);
         err = 1;
@@ -101,7 +105,21 @@ int ip_handle_request(struct context *ctx) {
     resp->source_ip = req->destination_ip;
     resp->destination_ip = req->source_ip;
 
-    resp->checksum = inet_checksum((void *)resp, sizeof(*resp));
+    resp->checksum = inet_checksum((void *)resp, sizeof(*resp), 0);
 
     return 0;
+}
+
+static uint32_t calculate_ipv4_pseudo_header_sum(const struct ip_packet *req) {
+    uint32_t sum = 0;
+    const uint16_t *data16 = (const uint16_t *)&req->source_ip;
+    size_t len =
+            (sizeof(req->source_ip) + sizeof(req->destination_ip)) / sizeof(*data16);
+
+    for (size_t i = 0; i < len; i++) {
+        sum += data16[i];
+    }
+
+    sum += htobe16(IP_PROTOCOL_UDP);
+    return sum;
 }

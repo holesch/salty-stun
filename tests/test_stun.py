@@ -82,7 +82,7 @@ def stun_request(wireguard_session, magic_cookie):
 
     expected_response = (
         scapy.IP(id=0)
-        / scapy.UDP(dport=6200, chksum=0)
+        / scapy.UDP(dport=6200)
         / scapy_stun.STUN(
             stun_message_type="Binding success response",
             magic_cookie=magic_cookie,

@@ -1,6 +1,5 @@
-import pytest
 import scapy.all as scapy
-import scapy.contrib.stun as scapy_stun
+import testlib.scapy_stun_backport as scapy_stun
 
 
 def test_ping(wireguard_session):
@@ -107,7 +106,6 @@ def test_udp_unsupported_port(wireguard_session):
     assert not response
 
 
-@pytest.mark.xfail(reason="Checksum is not checked for UDP")
 def test_udp_wrong_checksum(wireguard_session):
     request = (
         scapy.IP() / scapy.UDP() / scapy_stun.STUN(stun_message_type="Binding request")
@@ -117,3 +115,53 @@ def test_udp_wrong_checksum(wireguard_session):
     request[scapy.UDP].chksum += 1
     response = wireguard_session.request(request)
     assert not response
+
+
+def test_udp_checksum_not_zero(wireguard_session):
+    """
+    If the UDP checksum result is zero by chance, it should be set to 0xFFFF.
+    """
+
+    local_addr, local_port = wireguard_session.local_address
+
+    expected_attribute = scapy_stun.STUNMappedAddress(port=local_port, ip=local_addr)
+
+    tmp_response = (
+        scapy.IP(id=0)
+        / scapy.UDP()
+        / scapy_stun.STUN(
+            stun_message_type="Binding success response",
+            magic_cookie=0,
+            transaction_id=0,
+            attributes=[expected_attribute],
+        )
+    )
+    tmp_response = scapy.IP(scapy.raw(tmp_response))
+
+    # Add checksum to the UDP packet content, so the computed checksum is 0
+    tid = tmp_response[scapy.UDP].chksum
+
+    request = (
+        scapy.IP()
+        / scapy.UDP()
+        / scapy_stun.STUN(
+            stun_message_type="Binding request", magic_cookie=0, transaction_id=tid
+        )
+    )
+    request = scapy.IP(scapy.raw(request))
+
+    response = wireguard_session.request(request)
+
+    expected_response = (
+        scapy.IP(id=0)
+        / scapy.UDP()
+        / scapy_stun.STUN(
+            stun_message_type="Binding success response",
+            magic_cookie=0,
+            transaction_id=tid,
+            attributes=[expected_attribute],
+        )
+    )
+    expected_response = scapy.IP(scapy.raw(expected_response))
+
+    assert response == expected_response
