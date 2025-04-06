@@ -28,6 +28,12 @@ def test_ip_wrong_version(wireguard_session):
     assert not response
 
 
+def test_ip_wrong_ihl(wireguard_session):
+    ping = scapy.IP(ihl=6) / scapy.ICMP() / b"payload"
+    response = wireguard_session.request(ping)
+    assert not response
+
+
 def test_ip_wrong_checksum(wireguard_session):
     ping = scapy.IP() / scapy.ICMP() / b"payload"
     # calculate checksums
@@ -165,3 +171,64 @@ def test_udp_checksum_not_zero(wireguard_session):
     expected_response = scapy.IP(scapy.raw(expected_response))
 
     assert response == expected_response
+
+
+def test_ping_ipv6(wireguard_session):
+    ping = (
+        scapy.IPv6(dst="fe80::1", src="fe80::2")
+        / scapy.ICMPv6EchoRequest()
+        / b"payload"
+    )
+    response = wireguard_session.request(ping)
+
+    expected_response = (
+        scapy.IPv6(dst="fe80::2", src="fe80::1") / scapy.ICMPv6EchoReply() / b"payload"
+    )
+    # calculate checksums
+    expected_response = scapy.IPv6(scapy.raw(expected_response))
+
+    assert response == expected_response
+
+
+def test_ipv6_too_short(wireguard_session):
+    response = wireguard_session.request(b"\x60")
+    assert not response
+
+
+def test_ipv6_wrong_total_length(wireguard_session):
+    ping = scapy.IPv6(plen=50) / scapy.ICMPv6EchoReply() / b"payload"
+    response = wireguard_session.request(ping)
+    assert not response
+
+
+def test_ipv6_unsupported_protocol(wireguard_session):
+    tcp_packet = scapy.IPv6() / scapy.TCP()
+    response = wireguard_session.request(tcp_packet)
+    assert not response
+
+
+def test_icmpv6_too_short(wireguard_session):
+    ping = scapy.IPv6(nh=58) / b"\x80"
+    response = wireguard_session.request(ping)
+    assert not response
+
+
+def test_icmpv6_unsupported_type(wireguard_session):
+    dest_unreach = scapy.IPv6() / scapy.ICMPv6DestUnreach()
+    response = wireguard_session.request(dest_unreach)
+    assert not response
+
+
+def test_icmpv6_unsupported_code(wireguard_session):
+    ping = scapy.IPv6() / scapy.ICMPv6EchoRequest(code=1) / b"payload"
+    response = wireguard_session.request(ping)
+    assert not response
+
+
+def test_icmpv6_wrong_checksum(wireguard_session):
+    ping = scapy.IPv6() / scapy.ICMPv6EchoRequest() / b"payload"
+    # calculate checksums
+    ping = scapy.IPv6(scapy.raw(ping))
+    ping[scapy.ICMPv6EchoRequest].cksum ^= 1
+    response = wireguard_session.request(ping)
+    assert not response

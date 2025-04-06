@@ -257,9 +257,14 @@ class WireGuardSession:
             # keep-alive packet
             return None
 
-        padded_pkt = scapy.IP(decrypted)
+        padded_pkt = scapy.IPv46(decrypted)
+        length = (
+            padded_pkt[scapy.IP].len
+            if type(padded_pkt) == scapy.IP
+            else padded_pkt[scapy.IPv6].plen + len(scapy.IPv6())
+        )
 
-        return scapy.IP(decrypted[: padded_pkt[scapy.IP].len])
+        return scapy.IPv46(decrypted[:length])
 
     @property
     def private_key(self):
