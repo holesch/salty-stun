@@ -41,6 +41,7 @@ bool sliding_window_is_replay(struct sliding_window *swin, uint64_t counter,
 
     // mark as seen
     swin_new->bitmap = swin->bitmap | this_bit;
+    swin_new->last_counter = swin->last_counter;
 
     // out of order but good
     return false;
