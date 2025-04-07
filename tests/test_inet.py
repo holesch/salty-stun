@@ -232,3 +232,37 @@ def test_icmpv6_wrong_checksum(wireguard_session):
     ping[scapy.ICMPv6EchoRequest].cksum ^= 1
     response = wireguard_session.request(ping)
     assert not response
+
+
+def test_udp_ipv6(wireguard_session):
+    tid = 0x36CAE9CFAB693C4320467127
+
+    request = (
+        scapy.IPv6()
+        / scapy.UDP()
+        / scapy_stun.STUN(
+            stun_message_type="Binding request",
+            transaction_id=tid,
+        )
+    )
+    request = scapy.IPv6(scapy.raw(request))
+
+    response = wireguard_session.request(request)
+
+    local_addr, local_port = wireguard_session.local_address
+    expected_attribute = scapy_stun.STUNXorMappedAddress(
+        xport=local_port, xip=local_addr
+    )
+
+    expected_response = (
+        scapy.IPv6()
+        / scapy.UDP()
+        / scapy_stun.STUN(
+            stun_message_type="Binding success response",
+            transaction_id=tid,
+            attributes=[expected_attribute],
+        )
+    )
+    expected_response = scapy.IPv6(scapy.raw(expected_response))
+
+    assert response == expected_response

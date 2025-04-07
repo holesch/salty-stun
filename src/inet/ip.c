@@ -180,12 +180,15 @@ static int ipv6_handle_request(struct context *ctx) {
     packet_reserve(&ctx->response, sizeof(struct ipv6_packet));
 
     int err = 0;
+    uint32_t ip_header_sum = calculate_ipv6_pseudo_header_sum(req);
+
     switch (req->next_header) {
-    case IP_PROTOCOL_ICMPV6: {
-        uint32_t ip_header_sum = calculate_ipv6_pseudo_header_sum(req);
+    case IP_PROTOCOL_ICMPV6:
         err = icmpv6_handle_request(ctx, ip_header_sum);
         break;
-    }
+    case IP_PROTOCOL_UDP:
+        err = udp_handle_request(ctx, ip_header_sum);
+        break;
     default:
         log_warn("Unsupported IP protocol: %d", req->next_header);
         err = 1;
