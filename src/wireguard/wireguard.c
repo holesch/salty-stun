@@ -61,6 +61,8 @@ static void write_key(FILE *file, const char *name, const uint8_t *key);
 // Label-Mac1
 //     The UTF-8 string literal “mac1----”, 8 bytes of output.
 static const uint8_t LABEL_MAC1[] = { 'm', 'a', 'c', '1', '-', '-', '-', '-' };
+// 2^64 - 2^13 - 1
+static const uint64_t REJECT_AFTER_MESSAGES = 0xffffffffffffdfff;
 
 int wireguard_init(struct wireguard *wg, const uint8_t *private_key, FILE *key_log,
         struct wireguard_state *state, now_func_t now) {
@@ -340,6 +342,12 @@ static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
 
     // msg.counter := N send m
     uint64_t msg_counter = le64toh(req->counter);
+
+    // limit messages per session
+    if (msg_counter >= REJECT_AFTER_MESSAGES) {
+        log_warn("too many messages for session");
+        return 1;
+    }
 
     // prevent replay attacks
     struct sliding_window new_counter = { 0 };
