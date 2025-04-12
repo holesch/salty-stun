@@ -1,6 +1,7 @@
 import base64
 import contextlib
 import socket
+import struct
 
 import pytest
 import scapy.all as scapy
@@ -201,4 +202,23 @@ def test_message_counter_limit(salty_stun, salty_stun_socket):
         reject_after_messages = 2**64 - 2**13 - 1
         assert wg.request(ping, counter=reject_after_messages - 1)
         wg.send(ping, counter=reject_after_messages)
+        assert not salty_stun_socket.recv(4096)
+
+
+def test_session_expired(salty_stun, salty_stun_socket):
+    ping = scapy.IP() / scapy.ICMP()
+
+    def add_time(time):
+        salty_stun_socket.send(struct.pack("!xxxxI", time))
+
+    with testlib.WireGuardSession(salty_stun.public_key, salty_stun_socket) as wg:
+        reject_after_time = 180
+        add_time(reject_after_time)
+
+        # just in time
+        assert wg.request(ping)
+
+        # expired
+        add_time(1)
+        wg.send(ping)
         assert not salty_stun_socket.recv(4096)

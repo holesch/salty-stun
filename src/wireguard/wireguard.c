@@ -340,6 +340,12 @@ static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
         return 1;
     }
 
+    // check session age
+    if (wg->now() - session->created_at > WIREGUARD_REJECT_AFTER_TIME) {
+        log_warn("session expired");
+        return 1;
+    }
+
     // msg.counter := N send m
     uint64_t msg_counter = le64toh(req->counter);
 

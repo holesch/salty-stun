@@ -28,7 +28,7 @@ def salty_stun_socket(salty_stun):
         yield sock
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def wireguard_session(salty_stun, salty_stun_socket):
     with testlib.WireGuardSession(salty_stun.public_key, salty_stun_socket) as wg:
         yield wg
