@@ -1,6 +1,7 @@
 # test dependencies
 pytest
 cryptography
+pycryptodomex
 scapy
 
 # static analysis

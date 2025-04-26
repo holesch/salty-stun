@@ -1,7 +1,6 @@
 import base64
 import contextlib
 import socket
-import struct
 
 import pytest
 import scapy.all as scapy
@@ -104,6 +103,7 @@ def test_multiple_sessions(pytestconfig):
         wg1 = stack.enter_context(
             testlib.WireGuardSession(salty_stun.public_key, sock, my_index=1)
         )
+        wg1.add_time(5)  # rate limit reset time
         wg2 = stack.enter_context(
             testlib.WireGuardSession(salty_stun.public_key, sock, my_index=2)
         )
@@ -121,15 +121,18 @@ def test_too_many_sessions(pytestconfig):
         )
         sock = stack.enter_context(udp_socket(5202))
 
-        stack.enter_context(
+        wg1 = stack.enter_context(
             testlib.WireGuardSession(salty_stun.public_key, sock, my_index=1)
         )
-        stack.enter_context(
+        wg1.add_time(5)  # rate limit reset time
+
+        wg2 = stack.enter_context(
             testlib.WireGuardSession(salty_stun.public_key, sock, my_index=2)
         )
+        wg2.add_time(5)  # rate limit reset time
 
-        wg = testlib.WireGuardSession(salty_stun.public_key, sock, my_index=3)
-        wg.send_handshake()
+        wg3 = testlib.WireGuardSession(salty_stun.public_key, sock, my_index=3)
+        wg3.send_handshake()
         assert not sock.recv(4096)
 
 
@@ -144,12 +147,16 @@ def test_session_slot_reuse(pytestconfig):
         sock = stack.enter_context(udp_socket(5203))
 
         with testlib.WireGuardSession(salty_stun.public_key, sock, my_index=1) as wg1:
+            wg1.add_time(5)  # rate limit reset time
+
             wg2 = stack.enter_context(
                 testlib.WireGuardSession(salty_stun.public_key, sock, my_index=2)
             )
 
             assert wg1.request(ping)
             assert wg2.request(ping)
+
+        wg2.add_time(5)  # rate limit reset time
 
         wg3 = stack.enter_context(
             testlib.WireGuardSession(salty_stun.public_key, sock, my_index=3)
@@ -208,18 +215,15 @@ def test_message_counter_limit(salty_stun, salty_stun_socket):
 def test_session_expired(salty_stun, salty_stun_socket):
     ping = scapy.IP() / scapy.ICMP()
 
-    def add_time(time):
-        salty_stun_socket.send(struct.pack("!xxxxI", time))
-
     with testlib.WireGuardSession(salty_stun.public_key, salty_stun_socket) as wg:
         reject_after_time = 180
-        add_time(reject_after_time)
+        wg.add_time(reject_after_time)
 
         # just in time
         assert wg.request(ping)
 
         # expired
-        add_time(1)
+        wg.add_time(1)
         wg.send(ping)
         assert not salty_stun_socket.recv(4096)
 
@@ -237,3 +241,33 @@ def test_listening_on_unix_socket(pytestconfig):
 
         # salty-stun exits
         salty_stun.wait(timeout=1)
+
+
+def test_rate_limit(pytestconfig):
+    builddir = pytestconfig.getoption("builddir")
+
+    with contextlib.ExitStack() as stack:
+        salty_stun = stack.enter_context(
+            testlib.SaltyStun(builddir / "salty-stun-test", port=5204, max_sessions=3)
+        )
+        sock = stack.enter_context(udp_socket(5204))
+
+        stack.enter_context(
+            testlib.WireGuardSession(salty_stun.public_key, sock, my_index=1)
+        )
+
+        # new cookie generated
+        wg2 = stack.enter_context(
+            testlib.WireGuardSession(
+                salty_stun.public_key, sock, my_index=2, expect_cookie=True
+            )
+        )
+
+        # reusing the same cookie
+        wg3 = stack.enter_context(
+            testlib.WireGuardSession(
+                salty_stun.public_key, sock, my_index=3, expect_cookie=True
+            )
+        )
+
+        assert wg2.cookie == wg3.cookie

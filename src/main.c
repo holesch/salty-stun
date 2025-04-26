@@ -62,8 +62,10 @@ int main(int argc, char *argv[]) {
     struct wireguard_state *state =
             state_mem_init(&state_mem, sessions, args.max_sessions, index_buckets);
 
+    size_t rate_limit = (args.max_sessions * WIREGUARD_RATE_LIMIT_RESET_TIME) /
+            WIREGUARD_REJECT_AFTER_TIME;
     struct wireguard wg;
-    wireguard_init(&wg, args.private_key, args.key_log, state, now_func);
+    wireguard_init(&wg, args.private_key, args.key_log, state, now_func, rate_limit);
 
     int sockfd = args.sockfd;
     if (sockfd == -1) {

@@ -1,4 +1,5 @@
 # ruff: noqa: F401
+from Cryptodome.Cipher import ChaCha20_Poly1305 as XChaCha20Poly1305
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PrivateKey,
     X25519PublicKey,

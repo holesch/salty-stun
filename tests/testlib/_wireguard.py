@@ -25,7 +25,7 @@ class InjectedWireguardTransportErrors(enum.Enum):
 
 
 class WireGuardSession:
-    def __init__(self, remote_public_key, socket, my_index=89):
+    def __init__(self, remote_public_key, socket, my_index=89, expect_cookie=False):
         self._static_key = dh_generate()
         self._remote_public_key = remote_public_key
         self._socket = socket
@@ -34,8 +34,11 @@ class WireGuardSession:
         self._hash = None
         self._ephemeral = None
         self._remote_index = None
+        self._sent_handshake = None
+        self._expect_cookie = expect_cookie
+        self._cookie = None
 
-    def send_handshake(self, error=None):
+    def send_handshake(self, error=None, cookie=None):
         # Ci := Hash(Construction)
         construction = b"Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s"
         self._hash = Hash(construction)
@@ -109,6 +112,11 @@ class WireGuardSession:
             mac1 = mac1[:-1] + bytes([mac1[-1] ^ 0x01])
         request.mac1 = mac1
 
+        if cookie:
+            request.mac2 = calculate_mac2(request, cookie)
+
+        self._sent_handshake = request
+
         to_send = bytes(request)
 
         if error == InjectedWireguardHandshakeErrors.TOO_SHORT:
@@ -123,6 +131,31 @@ class WireGuardSession:
 
         data = self._socket.recv(4096)
         response = scapy_wg.Wireguard(data)
+
+        if self._expect_cookie:
+            assert response.layers() == [
+                scapy_wg.Wireguard,
+                scapy_wg.WireguardCookieReply,
+            ]
+            assert response.receiver_index == self._my_index
+
+            # msg.cookie := Xaead(Hash(Label-Cookie ‖ Spub m), msg.nonce, τ, M)
+            label_cookie = b"cookie--"
+            h = hashlib.blake2s(label_cookie, digest_size=32)
+            h.update(self._remote_public_key.public_bytes_raw())
+            cookie_key = h.digest()
+
+            auth_text = self._sent_handshake.mac1
+
+            self._cookie = xaead_decrypt(
+                cookie_key, response.nonce, response.encrypted_cookie, auth_text
+            )
+
+            self.send_handshake(cookie=self._cookie)
+
+            data = self._socket.recv(4096)
+            response = scapy_wg.Wireguard(data)
+
         assert response.layers() == [scapy_wg.Wireguard, scapy_wg.WireguardResponse]
 
         assert response.mac1 == calculate_mac1(response, self._static_key.public_key())
@@ -188,7 +221,7 @@ class WireGuardSession:
     def __exit__(self, exc_type, exc_value, traceback):
         # make session time out
         reject_after_time = 180
-        self._socket.send(struct.pack("!xxxxI", reject_after_time))
+        self.add_time(reject_after_time)
 
     def send(self, data, error=None, counter=None):
         # msg.receiver := Im'
@@ -266,6 +299,9 @@ class WireGuardSession:
 
         return scapy.IPv46(decrypted[:length])
 
+    def add_time(self, time):
+        self._socket.send(struct.pack("!xxxxI", time))
+
     @property
     def private_key(self):
         return self._static_key
@@ -273,6 +309,10 @@ class WireGuardSession:
     @property
     def local_address(self):
         return self._socket.getsockname()[:2]
+
+    @property
+    def cookie(self):
+        return self._cookie
 
 
 class Hash:
@@ -310,6 +350,12 @@ def aead_decrypt(key, counter, ciphertext, auth_text):
     return crypto.ChaCha20Poly1305(key).decrypt(nonce, ciphertext, auth_text)
 
 
+def xaead_decrypt(key, nonce, ciphertext, auth_text):
+    cipher = crypto.XChaCha20Poly1305.new(key=key, nonce=nonce)
+    cipher.update(auth_text)
+    return cipher.decrypt_and_verify(ciphertext[:-16], ciphertext[-16:])
+
+
 def dh_generate():
     return crypto.X25519PrivateKey.generate()
 
@@ -330,3 +376,7 @@ def calculate_mac1(msg, remote_public_key):
     h.update(remote_public_key.public_bytes_raw())
     mac1_key = h.digest()
     return hashlib.blake2s(bytes(msg)[:-32], key=mac1_key, digest_size=16).digest()
+
+
+def calculate_mac2(msg, cookie):
+    return hashlib.blake2s(bytes(msg)[:-16], key=cookie, digest_size=16).digest()

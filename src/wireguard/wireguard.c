@@ -15,6 +15,7 @@
 #include "wireguard/hash.h"
 #include "wireguard/kdf.h"
 #include "wireguard/mac.h"
+#include "wireguard/xaead.h"
 
 enum wg_type {
     WG_TYPE_INITIATION = 1,
@@ -25,6 +26,7 @@ enum wg_type {
 
 enum {
     TAI64N_SIZE = 12,
+    COOKIE_SECRET_EXPIRATION_TIME = 120,
 };
 
 struct handshake_request {
@@ -47,6 +49,13 @@ struct handshake_response {
     uint8_t mac2[MAC_SIZE];
 };
 
+struct cookie_reply {
+    uint32_t type;
+    uint32_t receiver;
+    uint8_t nonce[XAEAD_NONCE_SIZE];
+    uint8_t cookie_tagged[MAC_SIZE + XAEAD_TAG_SIZE];
+};
+
 struct transport_data {
     uint32_t type;
     uint32_t receiver;
@@ -55,17 +64,25 @@ struct transport_data {
 };
 
 static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx);
+static bool is_under_load(struct wireguard *wg, time_t now);
+static void calculate_cookie(
+        struct wireguard *wg, struct context *ctx, uint8_t *cookie);
+static void send_cookie_reply(struct wireguard *wg, struct context *ctx,
+        struct handshake_request *req, uint8_t *cookie);
 static int wireguard_handle_data(struct wireguard *wg, struct context *ctx);
 static void write_key(FILE *file, const char *name, const uint8_t *key);
 
 // Label-Mac1
 //     The UTF-8 string literal “mac1----”, 8 bytes of output.
 static const uint8_t LABEL_MAC1[] = { 'm', 'a', 'c', '1', '-', '-', '-', '-' };
+// Label-Cookie
+//     The UTF-8 string literal “cookie--”, 8 bytes of output.
+static const uint8_t LABEL_COOKIE[] = { 'c', 'o', 'o', 'k', 'i', 'e', '-', '-' };
 // 2^64 - 2^13 - 1
 static const uint64_t REJECT_AFTER_MESSAGES = 0xffffffffffffdfff;
 
 int wireguard_init(struct wireguard *wg, const uint8_t *private_key, FILE *key_log,
-        struct wireguard_state *state, now_func_t now) {
+        struct wireguard_state *state, now_func_t now, size_t rate_limit) {
     struct hash_state hash_state;
 
     wg->private_key = private_key;
@@ -74,6 +91,10 @@ int wireguard_init(struct wireguard *wg, const uint8_t *private_key, FILE *key_l
     wg->key_log = key_log;
     wg->state = state;
     wg->now = now;
+    wg->rate_limit = rate_limit;
+    wg->cookie_secret_expiration_time = 0;
+    wg->rate = 0;
+    wg->rate_limit_reset_time = 0;
 
     // pre-calculate mac1 key
     // msg.mac1 := Mac(Hash(Label-Mac1 ‖ Spub m′ ), msgα)
@@ -81,6 +102,13 @@ int wireguard_init(struct wireguard *wg, const uint8_t *private_key, FILE *key_l
     hash_update(&hash_state, LABEL_MAC1, sizeof(LABEL_MAC1));
     hash_update(&hash_state, wg->public_key, sizeof(wg->public_key));
     hash_final(&hash_state, wg->mac1_key);
+
+    // pre-calculate cookie encryption key
+    // Hash(Label-Cookie ‖ Spub m)
+    hash_init(&hash_state);
+    hash_update(&hash_state, LABEL_COOKIE, sizeof(LABEL_COOKIE));
+    hash_update(&hash_state, wg->public_key, sizeof(wg->public_key));
+    hash_final(&hash_state, wg->cookie_encryption_key);
 
     // Ci := Hash(Construction)
     // Construction
@@ -145,11 +173,46 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
     // msg.mac1 := Mac(Hash(Label-Mac1 ‖ Spub m′ ), msgα)
     uint8_t mac1[MAC_SIZE];
     size_t in_len = sizeof(*req) - sizeof(req->mac1) - sizeof(req->mac2);
-    mac_calculate(mac1, req, in_len, wg->mac1_key);
+    mac_calculate(mac1, req, in_len, wg->mac1_key, sizeof(wg->mac1_key));
 
     if (sodium_memcmp(mac1, req->mac1, sizeof(mac1)) != 0) {
         log_warn("mac1 mismatch");
         return 1;
+    }
+
+    time_t now = wg->now();
+
+    if (is_under_load(wg, now)) {
+        log_warn("under load");
+        uint8_t cookie[MAC_SIZE];
+
+        // The secret variable, Rm, changes every two minutes to a random value
+        if (wg->cookie_secret_expiration_time <= now) {
+            log_debug("cookie secret expired, generating new one");
+            wg->cookie_secret_expiration_time = now + COOKIE_SECRET_EXPIRATION_TIME;
+            randombytes_buf(wg->cookie_secret, sizeof(wg->cookie_secret));
+
+            calculate_cookie(wg, ctx, cookie);
+
+            // no need to check mac2, since we have a new secret
+            send_cookie_reply(wg, ctx, req, cookie);
+            return 0;
+        }
+
+        log_debug("cookie secret still valid, using it");
+        calculate_cookie(wg, ctx, cookie);
+
+        // msg.mac2 := Mac(Lm, msgβ)
+        // The latest cookie received is represented by Lm
+        uint8_t mac2[MAC_SIZE];
+        in_len = sizeof(*req) - sizeof(req->mac2);
+        mac_calculate(mac2, req, in_len, cookie, sizeof(cookie));
+
+        if (sodium_memcmp(mac2, req->mac2, sizeof(mac2)) != 0) {
+            log_warn("cookie mac2 mismatch");
+            send_cookie_reply(wg, ctx, req, cookie);
+            return 0;
+        }
     }
 
     // msg.sender := Ii
@@ -278,13 +341,13 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
     hash_mix(hash, resp->empty_tagged, sizeof(resp->empty_tagged));
 
     // msg.mac1 := Mac(Hash(Label-Mac1 ‖ Spub m′ ), msgα)
-    uint8_t mac1_key[MAC_KEY_SIZE];
+    uint8_t mac1_key[HASH_SIZE];
     hash_init(&hash_state);
     hash_update(&hash_state, LABEL_MAC1, sizeof(LABEL_MAC1));
     hash_update(&hash_state, remote_public_key, sizeof(remote_public_key));
     hash_final(&hash_state, mac1_key);
     in_len = sizeof(*resp) - sizeof(resp->mac1) - sizeof(resp->mac2);
-    mac_calculate(resp->mac1, resp, in_len, mac1_key);
+    mac_calculate(resp->mac1, resp, in_len, mac1_key, sizeof(mac1_key));
 
     // msg.mac2 := 0
     memset(resp->mac2, 0, sizeof(resp->mac2));
@@ -298,7 +361,7 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
     session.recv_counter = SLIDING_WINDOW_INIT;
     session.send_counter = 0;
 
-    session.created_at = wg->now();
+    session.created_at = now;
 
     // store session
     err = wg->state->store_new_session(wg->state, &session);
@@ -320,6 +383,59 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
     sodium_memzero(encryption_key, sizeof(encryption_key));
 
     return 0;
+}
+
+static bool is_under_load(struct wireguard *wg, time_t now) {
+    if (now >= wg->rate_limit_reset_time) {
+        wg->rate_limit_reset_time = now + WIREGUARD_RATE_LIMIT_RESET_TIME;
+        wg->rate = 1;
+        return false;
+    }
+
+    if (wg->rate > wg->rate_limit) {
+        return true;
+    }
+
+    wg->rate++;
+    return false;
+}
+
+static void calculate_cookie(
+        struct wireguard *wg, struct context *ctx, uint8_t *cookie) {
+    // τ := Mac(Rm, Am′)
+    // Am′ represents a concatenation of the subscript’s external IP source
+    // address and UDP source port
+    struct mac_state mac_state;
+    mac_init(&mac_state, wg->cookie_secret, sizeof(wg->cookie_secret));
+    if (ctx->outer_remote_addr.ss_family == AF_INET6) {
+        struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)&ctx->outer_remote_addr;
+        mac_update(&mac_state, &addr6->sin6_addr, sizeof(addr6->sin6_addr));
+        mac_update(&mac_state, &addr6->sin6_port, sizeof(addr6->sin6_port));
+        mac_update(&mac_state, &addr6->sin6_scope_id, sizeof(addr6->sin6_scope_id));
+    } else {
+        assert(ctx->outer_remote_addr.ss_family == AF_INET);
+        struct sockaddr_in *addr4 = (struct sockaddr_in *)&ctx->outer_remote_addr;
+        mac_update(&mac_state, &addr4->sin_addr, sizeof(addr4->sin_addr));
+        mac_update(&mac_state, &addr4->sin_port, sizeof(addr4->sin_port));
+    }
+    mac_final(&mac_state, cookie);
+}
+
+static void send_cookie_reply(struct wireguard *wg, struct context *ctx,
+        struct handshake_request *req, uint8_t *cookie) {
+    struct cookie_reply *resp = packet_set_len(&ctx->response, sizeof(*resp));
+    resp->type = htole32(WG_TYPE_COOKIE);
+
+    // receiver := Im′
+    resp->receiver = req->sender;
+
+    // msg.nonce := ρ24
+    randombytes_buf(resp->nonce, sizeof(resp->nonce));
+
+    // msg.cookie := Xaead(Hash(Label-Cookie ‖ Spub m), msg.nonce, τ, M)
+    // M represents the msg.mac1 value of the message to which this is in reply
+    xaead_encrypt(resp->cookie_tagged, wg->cookie_encryption_key, resp->nonce, cookie,
+            MAC_SIZE, req->mac1, sizeof(req->mac1));
 }
 
 static int wireguard_handle_data(struct wireguard *wg, struct context *ctx) {
