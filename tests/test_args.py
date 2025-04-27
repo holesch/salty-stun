@@ -187,7 +187,7 @@ def test_invalid_port(args_runner, port):
 
 
 def test_max_sessions_max_value(args_runner):
-    max_value = 0xFFFFFFFFFFFFFFFF
+    max_value = 0x800000
     args = args_runner.parse_args(
         "-k", "-", "-n", str(max_value), input_=DUMMY_PUBLIC_KEY_B64
     )
@@ -195,7 +195,7 @@ def test_max_sessions_max_value(args_runner):
 
 
 def test_max_sessions_too_large(args_runner):
-    max_value = 0xFFFFFFFFFFFFFFFF
+    max_value = 0x800000 + 1
     result = args_runner.run_err(
         "-k", "-", "-n", str(max_value + 1), input_=DUMMY_PUBLIC_KEY_B64
     )

@@ -70,8 +70,8 @@ void parse_args(int argc, char *argv[], struct args *args) {
             exit(0);
             break;
         case 'p': {
-            unsigned long min_port = 1;
-            unsigned long max_port = UINT16_MAX;
+            const unsigned long min_port = 1;
+            const unsigned long max_port = UINT16_MAX;
             args->port =
                     handle_ulong_option(optarg, min_port, max_port, "-p: invalid port");
             break;
@@ -84,22 +84,22 @@ void parse_args(int argc, char *argv[], struct args *args) {
             args->key_log = open_key_log_file(optarg);
             break;
         case 'l': {
-            unsigned long min_level = (unsigned long)LOG_ERROR;
-            unsigned long max_level = (unsigned long)LOG_DEBUG;
+            const unsigned long min_level = (unsigned long)LOG_ERROR;
+            const unsigned long max_level = (unsigned long)LOG_DEBUG;
             args->level = (enum log_level)handle_ulong_option(
                     optarg, min_level, max_level, "-l: invalid log level");
             break;
         }
         case 'n': {
-            unsigned long min_sessions = 1;
-            unsigned long max_sessions = SIZE_MAX;
+            const unsigned long min_sessions = 1;
+            const unsigned long max_sessions = 0x800000;
             args->max_sessions = handle_ulong_option(optarg, min_sessions, max_sessions,
                     "-n: invalid number of sessions");
             break;
         }
         case 'f': {
-            unsigned long min_fd = 0;
-            unsigned long max_fd = INT_MAX;
+            const unsigned long min_fd = 0;
+            const unsigned long max_fd = INT_MAX;
             args->sockfd = (int)handle_ulong_option(
                     optarg, min_fd, max_fd, "-f: invalid file descriptor");
             break;
