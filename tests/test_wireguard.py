@@ -222,3 +222,18 @@ def test_session_expired(salty_stun, salty_stun_socket):
         add_time(1)
         wg.send(ping)
         assert not salty_stun_socket.recv(4096)
+
+
+def test_listening_on_unix_socket(pytestconfig):
+    builddir = pytestconfig.getoption("builddir")
+    with testlib.SaltyStun(
+        builddir / "salty-stun-test", port=None, address_family="Unix"
+    ) as salty_stun, socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+        sock.bind(b"\0salty-stun-test-client")
+        sock.connect(b"\0salty-stun-test-server")
+
+        wg = testlib.WireGuardSession(salty_stun.public_key, sock)
+        wg.send_handshake()
+
+        # salty-stun exits
+        salty_stun.wait(timeout=1)

@@ -1,6 +1,7 @@
 #include "stun.h"
 
 #include <arpa/inet.h>
+#include <assert.h>
 #include <endian.h>
 #include <netinet/in.h>
 #include <stdint.h>
@@ -59,7 +60,7 @@ struct stun_mapped_address_v6 {
     uint8_t address[sizeof(struct in6_addr)];
 };
 
-static int fill_mapped_address(struct context *ctx, struct stun_packet *req);
+static void fill_mapped_address(struct context *ctx, struct stun_packet *req);
 static void fill_mapped_address_v4(
         struct context *ctx, struct sockaddr_in *addr, struct stun_packet *req);
 static void fill_mapped_address_v6(
@@ -86,10 +87,7 @@ int stun_handle_request(struct context *ctx) {
 
     packet_reserve(&ctx->response, sizeof(struct stun_packet));
 
-    int err = fill_mapped_address(ctx, req);
-    if (err) {
-        return err;
-    }
+    fill_mapped_address(ctx, req);
 
     size_t content_len = ctx->response.len;
     struct stun_packet *resp = packet_push_head(&ctx->response, sizeof(*resp));
@@ -102,7 +100,7 @@ int stun_handle_request(struct context *ctx) {
     return 0;
 }
 
-static int fill_mapped_address(struct context *ctx, struct stun_packet *req) {
+static void fill_mapped_address(struct context *ctx, struct stun_packet *req) {
     if (ctx->outer_remote_addr.ss_family == AF_INET6) {
         struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)&ctx->outer_remote_addr;
         if (IN6_IS_ADDR_V4MAPPED(&addr6->sin6_addr)) {
@@ -117,15 +115,11 @@ static int fill_mapped_address(struct context *ctx, struct stun_packet *req) {
         } else {
             fill_mapped_address_v6(ctx, addr6, req);
         }
-    } else if (ctx->outer_remote_addr.ss_family == AF_INET) {
+    } else {
+        assert(ctx->outer_remote_addr.ss_family == AF_INET);
         struct sockaddr_in *addr4 = (struct sockaddr_in *)&ctx->outer_remote_addr;
         fill_mapped_address_v4(ctx, addr4, req);
-    } else {
-        log_warn("Unknown address family: %d", ctx->outer_remote_addr.ss_family);
-        return 1;
     }
-
-    return 0;
 }
 
 static void fill_mapped_address_v4(

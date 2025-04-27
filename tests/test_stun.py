@@ -35,23 +35,6 @@ def test_listening_on_ipv4(pytestconfig, magic_cookie):
             stun_request(wg, magic_cookie)
 
 
-def test_listening_on_unix_socket(pytestconfig):
-    builddir = pytestconfig.getoption("builddir")
-    with testlib.SaltyStun(
-        builddir / "salty-stun-test", port=None, address_family="Unix"
-    ) as salty_stun, socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
-        sock.bind(b"\0salty-stun-test-client")
-        sock.connect(b"\0salty-stun-test-server")
-        with testlib.WireGuardSession(salty_stun.public_key, sock) as wg:
-            request = (
-                scapy.IP()
-                / scapy.UDP()
-                / scapy_stun.STUN(stun_message_type="Binding request")
-            )
-            request = scapy.IP(scapy.raw(request))
-            assert not wg.request(request)
-
-
 def stun_request(wireguard_session, magic_cookie):
     tid = 0x36CAE9CFAB693C4320467127
 

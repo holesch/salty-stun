@@ -75,6 +75,7 @@ class SaltyStun:
             proc.stdin.close()
 
             self._stdout = proc.stdout
+            self._proc = proc
 
             self._stack = stack.pop_all()
             self._stack.__enter__()
@@ -82,6 +83,9 @@ class SaltyStun:
 
     def __exit__(self, exc_type, exc, tb):
         self._stack.__exit__(exc_type, exc, tb)
+
+    def wait(self, timeout=None):
+        self._proc.wait(timeout=timeout)
 
     @property
     def port(self):

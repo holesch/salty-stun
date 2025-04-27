@@ -101,6 +101,12 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
+        if (ctx.outer_remote_addr.ss_family != AF_INET &&
+                ctx.outer_remote_addr.ss_family != AF_INET6) {
+            log_error("Unknown address family: %d", ctx.outer_remote_addr.ss_family);
+            return 1;
+        }
+
         packet_init(&ctx.request, request_buffer.bytes, len);
         packet_init(&ctx.response, response_buffer.bytes, sizeof(response_buffer));
 
