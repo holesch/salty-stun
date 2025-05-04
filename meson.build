@@ -46,6 +46,7 @@ endif
 
 sodium_dep = dependency('libsodium')
 blake2_dep = dependency('libb2')
+m_dep = cc.find_library('m', required: false)
 
 version_data = configuration_data()
 version_data.set_quoted('SALTY_STUN_VERSION', meson.project_version())
@@ -63,6 +64,7 @@ salty_stun_dep = declare_dependency(
         'src/wireguard/wireguard.c',
         'src/wireguard/state_mem.c',
         'src/wireguard/sliding_window.c',
+        'src/wireguard/rate_limit.c',
         'src/inet/ip.c',
         'src/inet/icmp.c',
         'src/inet/checksum.c',
@@ -71,7 +73,7 @@ salty_stun_dep = declare_dependency(
         'lib/cdsa/hashtable.c',
     ],
     include_directories: ['src', config_dir, 'lib'],
-    dependencies: [sodium_dep, blake2_dep],
+    dependencies: [sodium_dep, blake2_dep, m_dep],
 )
 
 salty_stun_exe = executable(
