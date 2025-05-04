@@ -33,8 +33,9 @@ def wg_session(pytestconfig):
             proc.stdin.write(private_key_b64)
             proc.stdin.close()
 
-            line = proc.stderr.readline()
-            assert b"Listening on port " in line
+            for line in proc.stderr:
+                if b"Listening on port " in line:
+                    break
 
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
                 sock.connect(("localhost", port))

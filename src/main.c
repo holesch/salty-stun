@@ -3,6 +3,7 @@
 #include <endian.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <signal.h>
@@ -64,10 +65,37 @@ int main(int argc, char *argv[]) {
     struct wireguard_state *state =
             state_mem_init(&state_mem, sessions, args.max_sessions, index_buckets);
 
-    size_t rate_limit = (args.max_sessions * WIREGUARD_RATE_LIMIT_RESET_TIME) /
-            WIREGUARD_REJECT_AFTER_TIME;
+    // rate limit calculation based on max_sessions.
+    // example for max_sessions=1024:
+    //     max_total = 29
+    //     max_per_ip = 3
+    // example for max_sessions=8388608 (max value):
+    //     max_total = 233017
+    //     max_per_ip = 61
+    uint32_t max_total = 1 +
+            (((args.max_sessions * WIREGUARD_RATE_LIMIT_RESET_TIME) - 1) /
+                    WIREGUARD_REJECT_AFTER_TIME);
+    static const double rate_limit_exponent = 1.0 / 3.0;
+    uint32_t max_per_ip = (uint32_t)pow(max_total, rate_limit_exponent);
+
+    static struct rate_limit_entry *entries;
+    entries = calloc(max_total, sizeof(struct rate_limit_entry));
+    static struct hashtable_node **rate_limit_buckets;
+    rate_limit_buckets = (struct hashtable_node **)calloc(
+            HASHTABLE_BUCKET_COUNT(max_total), sizeof(struct hashtable_node *));
+    if (!entries || !rate_limit_buckets) {
+        log_errnum_error("error allocating memory for rate limiting");
+        return 1;
+    }
+
+    struct rate_limiter rate_limiter;
+    rate_limit_init(&rate_limiter, WIREGUARD_RATE_LIMIT_RESET_TIME, max_total,
+            max_per_ip, entries, rate_limit_buckets);
+    log_info("Rate limit for %u second interval: %u total, %u per IP",
+            WIREGUARD_RATE_LIMIT_RESET_TIME, max_total, max_per_ip);
+
     struct wireguard wg;
-    wireguard_init(&wg, args.private_key, args.key_log, state, now_func, rate_limit);
+    wireguard_init(&wg, args.private_key, args.key_log, state, now_func, &rate_limiter);
 
     int sockfd = args.sockfd;
     if (sockfd == -1) {

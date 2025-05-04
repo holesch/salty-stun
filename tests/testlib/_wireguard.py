@@ -130,6 +130,9 @@ class WireGuardSession:
         self.send_handshake()
 
         data = self._socket.recv(4096)
+        if not data:
+            raise HandshakeDeniedError("Handshake denied by remote peer")
+
         response = scapy_wg.Wireguard(data)
 
         if self._expect_cookie:
@@ -154,6 +157,9 @@ class WireGuardSession:
             self.send_handshake(cookie=self._cookie)
 
             data = self._socket.recv(4096)
+            if not data:
+                raise VerifiedHandshakeDeniedError("Handshake denied by remote peer")
+
             response = scapy_wg.Wireguard(data)
 
         assert response.layers() == [scapy_wg.Wireguard, scapy_wg.WireguardResponse]
@@ -380,3 +386,11 @@ def calculate_mac1(msg, remote_public_key):
 
 def calculate_mac2(msg, cookie):
     return hashlib.blake2s(bytes(msg)[:-16], key=cookie, digest_size=16).digest()
+
+
+class HandshakeDeniedError(Exception):
+    pass
+
+
+class VerifiedHandshakeDeniedError(Exception):
+    pass

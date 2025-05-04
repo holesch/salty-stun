@@ -10,6 +10,7 @@
 #include "wireguard/dh.h"
 #include "wireguard/hash.h"
 #include "wireguard/mac.h"
+#include "wireguard/rate_limit.h"
 #include "wireguard/sliding_window.h"
 
 #define WIREGUARD_REJECT_AFTER_TIME 180
@@ -45,13 +46,12 @@ struct wireguard {
     FILE *key_log;
     struct wireguard_state *state;
     now_func_t now;
-    size_t rate;
-    size_t rate_limit;
-    time_t rate_limit_reset_time;
+    struct rate_limiter *rate_limiter;
 };
 
 int wireguard_init(struct wireguard *wg, const uint8_t *private_key, FILE *key_log,
-        struct wireguard_state *state, now_func_t now, size_t rate_limit);
+        struct wireguard_state *state, now_func_t now,
+        struct rate_limiter *rate_limiter);
 int wireguard_handle_request(struct wireguard *wg, struct context *ctx);
 
 #endif // WIREGUARD_H_

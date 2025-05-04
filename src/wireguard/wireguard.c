@@ -64,7 +64,6 @@ struct transport_data {
 };
 
 static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx);
-static bool is_under_load(struct wireguard *wg, time_t now);
 static void calculate_cookie(
         struct wireguard *wg, struct context *ctx, uint8_t *cookie);
 static void send_cookie_reply(struct wireguard *wg, struct context *ctx,
@@ -82,7 +81,8 @@ static const uint8_t LABEL_COOKIE[] = { 'c', 'o', 'o', 'k', 'i', 'e', '-', '-' }
 static const uint64_t REJECT_AFTER_MESSAGES = 0xffffffffffffdfff;
 
 int wireguard_init(struct wireguard *wg, const uint8_t *private_key, FILE *key_log,
-        struct wireguard_state *state, now_func_t now, size_t rate_limit) {
+        struct wireguard_state *state, now_func_t now,
+        struct rate_limiter *rate_limiter) {
     struct hash_state hash_state;
 
     wg->private_key = private_key;
@@ -91,10 +91,8 @@ int wireguard_init(struct wireguard *wg, const uint8_t *private_key, FILE *key_l
     wg->key_log = key_log;
     wg->state = state;
     wg->now = now;
-    wg->rate_limit = rate_limit;
+    wg->rate_limiter = rate_limiter;
     wg->cookie_secret_expiration_time = 0;
-    wg->rate = 0;
-    wg->rate_limit_reset_time = 0;
 
     // pre-calculate mac1 key
     // msg.mac1 := Mac(Hash(Label-Mac1 ‖ Spub m′ ), msgα)
@@ -182,7 +180,7 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
 
     time_t now = wg->now();
 
-    if (is_under_load(wg, now)) {
+    if (!rate_limit_is_allowed_unverified(wg->rate_limiter, now)) {
         log_warn("under load");
         uint8_t cookie[MAC_SIZE];
 
@@ -212,6 +210,13 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
             log_warn("cookie mac2 mismatch");
             send_cookie_reply(wg, ctx, req, cookie);
             return 0;
+        }
+
+        // source IP address is now verified, it can be used to rate limit
+        if (!rate_limit_is_allowed_verified(
+                    wg->rate_limiter, &ctx->outer_remote_addr)) {
+            log_warn("rate limit exceeded");
+            return 1;
         }
     }
 
@@ -383,21 +388,6 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
     sodium_memzero(encryption_key, sizeof(encryption_key));
 
     return 0;
-}
-
-static bool is_under_load(struct wireguard *wg, time_t now) {
-    if (now >= wg->rate_limit_reset_time) {
-        wg->rate_limit_reset_time = now + WIREGUARD_RATE_LIMIT_RESET_TIME;
-        wg->rate = 1;
-        return false;
-    }
-
-    if (wg->rate > wg->rate_limit) {
-        return true;
-    }
-
-    wg->rate++;
-    return false;
 }
 
 static void calculate_cookie(

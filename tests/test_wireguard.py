@@ -90,6 +90,13 @@ def udp_socket(port):
         yield sock
 
 
+@contextlib.contextmanager
+def udp_socket_v6(port):
+    with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sock:
+        sock.connect(("localhost", port))
+        yield sock
+
+
 def test_multiple_sessions(pytestconfig):
     builddir = pytestconfig.getoption("builddir")
     ping = scapy.IP() / scapy.ICMP()
@@ -243,7 +250,7 @@ def test_listening_on_unix_socket(pytestconfig):
         salty_stun.wait(timeout=1)
 
 
-def test_rate_limit(pytestconfig):
+def test_rate_limit_expect_cookie(pytestconfig):
     builddir = pytestconfig.getoption("builddir")
 
     with contextlib.ExitStack() as stack:
@@ -252,9 +259,19 @@ def test_rate_limit(pytestconfig):
         )
         sock = stack.enter_context(udp_socket(5204))
 
-        stack.enter_context(
+        wg1 = stack.enter_context(
             testlib.WireGuardSession(salty_stun.public_key, sock, my_index=1)
         )
+
+        # the next request is verified, but denied -> now under load
+        with pytest.raises(testlib.VerifiedHandshakeDeniedError):
+            stack.enter_context(
+                testlib.WireGuardSession(
+                    salty_stun.public_key, sock, my_index=9999, expect_cookie=True
+                )
+            )
+
+        wg1.add_time(5)  # rate limit reset time
 
         # new cookie generated
         wg2 = stack.enter_context(
@@ -262,6 +279,7 @@ def test_rate_limit(pytestconfig):
                 salty_stun.public_key, sock, my_index=2, expect_cookie=True
             )
         )
+        wg1.add_time(5)  # rate limit reset time
 
         # reusing the same cookie
         wg3 = stack.enter_context(
@@ -271,3 +289,66 @@ def test_rate_limit(pytestconfig):
         )
 
         assert wg2.cookie == wg3.cookie
+
+
+def test_rate_limit_per_ip(pytestconfig):
+    builddir = pytestconfig.getoption("builddir")
+
+    with contextlib.ExitStack() as stack:
+        salty_stun = stack.enter_context(
+            testlib.SaltyStun(builddir / "salty-stun-test", port=5205)
+        )
+        sock4 = stack.enter_context(udp_socket(5205))
+        sock6 = stack.enter_context(udp_socket_v6(5205))
+
+        # allow 29 sessions without verifying IP
+        wg = [
+            stack.enter_context(
+                testlib.WireGuardSession(salty_stun.public_key, sock4, my_index=i)
+            )
+            for i in range(29)
+        ]
+
+        # the next request is verified, but denied -> now under load
+        with pytest.raises(testlib.VerifiedHandshakeDeniedError):
+            stack.enter_context(
+                testlib.WireGuardSession(
+                    salty_stun.public_key, sock4, my_index=9999, expect_cookie=True
+                )
+            )
+
+        # rate limit reset timeout
+        wg[0].add_time(5)
+
+        # allow up to 3 sessions per IP
+        for i in range(3):
+            stack.enter_context(
+                testlib.WireGuardSession(
+                    salty_stun.public_key, sock4, my_index=1000 + i, expect_cookie=True
+                )
+            )
+
+        with pytest.raises(testlib.VerifiedHandshakeDeniedError):
+            stack.enter_context(
+                testlib.WireGuardSession(
+                    salty_stun.public_key, sock4, my_index=9999, expect_cookie=True
+                )
+            )
+
+        # a different source IP is allowed
+        stack.enter_context(
+            testlib.WireGuardSession(
+                salty_stun.public_key, sock6, my_index=2000, expect_cookie=True
+            )
+        )
+
+        # rate limit reset timeout and under load timeout
+        wg[0].add_time(5)
+
+        # unverified sessions are allowed again
+        for i in range(29):
+            stack.enter_context(
+                testlib.WireGuardSession(
+                    salty_stun.public_key, sock4, my_index=3000 + i
+                )
+            )
