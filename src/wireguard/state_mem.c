@@ -4,27 +4,19 @@
 
 #include "log.h"
 
-#define SESSION_FROM_NODE(node_) \
-    ((struct state_mem_session *)((char *)(node_) - \
-            offsetof(struct state_mem_session, node)))
-#define CONST_SESSION_FROM_NODE(node_) \
-    ((const struct state_mem_session *)((const char *)(node_) - \
-            offsetof(struct state_mem_session, node)))
-
 #define INVALID_TIME INT64_MAX
 
 static int store_new_session(
         struct wireguard_state *state, struct wireguard_session *session);
 static struct wireguard_session *get_session_by_local_index(
         struct wireguard_state *state, uint32_t local_index);
-static size_t index_hash(const void *key);
-static int index_equals(const void *key, const HashTableNode *node);
+static size_t calculate_bucket_index(struct state_mem *state_mem, uint32_t local_index);
+static struct state_mem_session *session_from_node(struct hashtable_node *node);
 
 struct wireguard_state *state_mem_init(struct state_mem *state_mem,
         struct state_mem_session *sessions, size_t session_count,
-        HashTableNode **index_buckets) {
-    hashtable_fast_init(&state_mem->index_session_map, index_buckets,
-            STATE_MEM_NUM_BUCKETS(session_count), index_hash, index_equals, NULL, NULL);
+        struct hashtable_node **index_buckets) {
+    hashtable_new(&state_mem->index_session_map, index_buckets, session_count);
 
     state_mem->sessions = sessions;
     state_mem->session_count = session_count;
@@ -56,17 +48,19 @@ static int store_new_session(
             return 1;
         }
 
-        hashtable_remove_key(
-                &state_mem->index_session_map, &state_session->session.local_index);
+        // Remove the old session from the hashtable
+        size_t bucket_index =
+                calculate_bucket_index(state_mem, state_session->session.local_index);
+        hashtable_remove(
+                &state_mem->index_session_map, bucket_index, &state_session->node);
     }
 
     state_mem->next_session_index =
             (state_mem->next_session_index + 1) % state_mem->session_count;
 
     state_session->session = *session;
-
-    hashtable_insert(
-            &state_mem->index_session_map, &session->local_index, &state_session->node);
+    size_t bucket_index = calculate_bucket_index(state_mem, session->local_index);
+    hashtable_add(&state_mem->index_session_map, bucket_index, &state_session->node);
 
     return 0;
 }
@@ -74,21 +68,28 @@ static int store_new_session(
 static struct wireguard_session *get_session_by_local_index(
         struct wireguard_state *state, uint32_t local_index) {
     struct state_mem *state_mem = (struct state_mem *)state;
-    HashTableNode *node =
-            hashtable_lookup_key(&state_mem->index_session_map, &local_index);
-    if (node == NULL) {
-        return NULL;
+
+    struct hashtable_node *node = NULL;
+    size_t bucket_index = calculate_bucket_index(state_mem, local_index);
+
+    hashtable_for_each_possible(&state_mem->index_session_map, node, bucket_index) {
+        struct state_mem_session *session = session_from_node(node);
+        if (session->session.local_index == local_index) {
+            return &session->session;
+        }
     }
 
-    return &SESSION_FROM_NODE(node)->session;
+    return NULL;
 }
 
-static size_t index_hash(const void *key) {
+static size_t calculate_bucket_index(
+        struct state_mem *state_mem, uint32_t local_index) {
     // Since local_index is a locally generated random number, its value can be
     // used as is. There's no need to calculate a hash.
-    return *(const uint32_t *)key;
+    return hashtable_hash_to_bucket_index(&state_mem->index_session_map, local_index);
 }
 
-static int index_equals(const void *key, const HashTableNode *node) {
-    return *(const uint32_t *)key == CONST_SESSION_FROM_NODE(node)->session.local_index;
+static struct state_mem_session *session_from_node(struct hashtable_node *node) {
+    return (struct state_mem_session *)((char *)node -
+            offsetof(struct state_mem_session, node));
 }

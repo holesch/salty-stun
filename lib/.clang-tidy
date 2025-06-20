@@ -1,3 +1,0 @@
-# This directory contains external projects. Don't check.
-# Enable at least one check to avoid "Error: no checks enabled"
-Checks: "-*,readability-identifier-naming"

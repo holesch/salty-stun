@@ -68,9 +68,9 @@ salty_stun_dep = declare_dependency(
         'src/inet/checksum.c',
         'src/inet/udp.c',
         'src/stun/stun.c',
-        'lib/cdsa/hashtable.c',
+        'src/hashtable.c',
     ],
-    include_directories: ['src', config_dir, 'lib'],
+    include_directories: ['src', config_dir],
     dependencies: [sodium_dep, blake2_dep],
 )
 

@@ -48,11 +48,13 @@ int main(int argc, char *argv[]) {
 
     setup_signal_handling();
 
+    hashtable_init();
+
     static struct state_mem_session *sessions;
     sessions = calloc(args.max_sessions, sizeof(struct state_mem_session));
-    static HashTableNode **index_buckets;
-    index_buckets = (HashTableNode **)calloc(
-            STATE_MEM_NUM_BUCKETS(args.max_sessions), sizeof(HashTableNode *));
+    static struct hashtable_node **index_buckets;
+    index_buckets = (struct hashtable_node **)calloc(
+            HASHTABLE_BUCKET_COUNT(args.max_sessions), sizeof(struct hashtable_node *));
     if (!sessions || !index_buckets) {
         log_errnum_error("error allocating memory for WireGuard sessions");
         return 1;
