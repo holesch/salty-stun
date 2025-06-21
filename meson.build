@@ -5,10 +5,12 @@
 project(
     'salty-stun',
     'c',
-    version: '0.1.0',
+    version: run_command('scripts/get_version', check: true).stdout().strip(),
     meson_version: '>=1.3',
     default_options: ['c_std=c11', 'warning_level=3', 'b_ndebug=if-release'],
 )
+meson.add_dist_script('scripts/get_version', '--save')
+
 add_project_arguments('-D_DEFAULT_SOURCE', language: 'c')
 
 cc = meson.get_compiler('c')
