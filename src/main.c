@@ -278,7 +278,8 @@ static void setup_signal_handling(void) {
 
 void signal_handler(int signum) {
     uint8_t sig = (char)signum;
-    (void)write(g_signal_pipe[1], &sig, sizeof(sig));
+    ssize_t ret = write(g_signal_pipe[1], &sig, sizeof(sig));
+    (void)ret;
 }
 
 void die_on_signal(void) {
