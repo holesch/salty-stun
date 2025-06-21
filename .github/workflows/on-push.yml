@@ -39,6 +39,8 @@ jobs:
         run: black --check tests
       - name: Check import statement order with isort
         run: isort --check tests
+      - name: Check REUSE compliance
+        run: reuse lint
       - name: Build
         run: |
           meson setup --werror -Dtests=enabled -Ddocs=enabled builddir

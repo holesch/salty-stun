@@ -12,3 +12,4 @@ scapy
 black
 isort
 ruff
+reuse
