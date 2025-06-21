@@ -44,6 +44,7 @@ static inline void *packet_peak_head(struct packet *packet, size_t len) {
 static inline void packet_reserve(struct packet *packet, size_t len) {
     void *head = packet_pop_head(packet, len);
     assert(head);
+    (void)head;
 }
 
 static inline void *packet_push_head(struct packet *packet, size_t len) {
