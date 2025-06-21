@@ -15,7 +15,7 @@ class SaltyStun:
         max_sessions=None,
         address_family="IPv6",
     ):
-        self._args = [bin_path, "-l", "3", "-k", "-"]
+        self._args = [bin_path, "-l", "debug", "-k", "-"]
         self._port = port
         self._stdout = None
 

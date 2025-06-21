@@ -35,13 +35,8 @@ NATs.
 	Wireshark. By default, keys are not logged.
 
 *-l* _level_
-	Set the log level to _level_. Valid values are integers between 0 and 3
-	(default 2).
-
-	- 0: error
-	- 1: warning
-	- 2: info
-	- 3: debug
+	Set the log level to _level_. Valid values are one of _error_, _warning_,
+	_info_ or _debug_. The default log level is _info_.
 
 *-n* _max_sessions_
 	Set the maximum number of concurrent sessions to _max_sessions_ (default

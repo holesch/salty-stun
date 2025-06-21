@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "version.h"
@@ -15,6 +16,7 @@ static FILE *open_key_log_file(const char *path);
 static void read_key(const char *path, unsigned char *key);
 static void read_key_from_file(FILE *file, const char *path, unsigned char *key);
 static bool is_lone_dash(const char *str);
+static enum log_level handle_log_level_option(const char *arg);
 static unsigned long handle_ulong_option(const char *arg, unsigned long min_value,
         unsigned long max_value, const char *error_msg);
 static int parse_ulong(const char *str, unsigned long *val, int base);
@@ -37,7 +39,8 @@ static const char HELP[] =
         "                   %s)\n"
         "  -K KEY_LOG       write keys to KEY_LOG, which can be used to decrypt the\n"
         "                   traffic later\n"
-        "  -l LEVEL         set log level to LEVEL (between 0 and 3)\n"
+        "  -l LEVEL         set log level to LEVEL (error, warning, info or debug,\n"
+        "                   default is info)\n"
         "  -n MAX_SESSIONS  maximum number of WireGuard sessions (default %zu)\n"
         "  -f FD            listen on socket FD instead of creating a new socket\n"
         "";
@@ -83,13 +86,9 @@ void parse_args(int argc, char *argv[], struct args *args) {
         case 'K':
             args->key_log = open_key_log_file(optarg);
             break;
-        case 'l': {
-            const unsigned long min_level = (unsigned long)LOG_ERROR;
-            const unsigned long max_level = (unsigned long)LOG_DEBUG;
-            args->level = (enum log_level)handle_ulong_option(
-                    optarg, min_level, max_level, "-l: invalid log level");
+        case 'l':
+            args->level = handle_log_level_option(optarg);
             break;
-        }
         case 'n': {
             const unsigned long min_sessions = 1;
             const unsigned long max_sessions = 0x800000;
@@ -195,6 +194,23 @@ static void read_key_from_file(FILE *file, const char *path, unsigned char *key)
 
 static bool is_lone_dash(const char *str) {
     return str[0] == '-' && str[1] == '\0';
+}
+
+static enum log_level handle_log_level_option(const char *arg) {
+    const char *level_str[] = {
+        [LOG_ERROR] = "error",
+        [LOG_WARN] = "warning",
+        [LOG_INFO] = "info",
+        [LOG_DEBUG] = "debug",
+    };
+
+    for (enum log_level level = LOG_ERROR; level <= LOG_DEBUG; level++) {
+        if (strcmp(arg, level_str[level]) == 0) {
+            return level;
+        }
+    }
+
+    usage_error("argument -l invalid log level: '%s'", arg);
 }
 
 static unsigned long handle_ulong_option(const char *arg, unsigned long min_value,

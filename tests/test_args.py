@@ -97,7 +97,7 @@ def test_args(args_runner):
         "-K",
         "-",
         "-l",
-        "3",
+        "debug",
         "-n",
         "42",
         "-f",
