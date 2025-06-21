@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2025 Simon Holesch <simon@holesch.de>
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # salty-stun
 
 [![on-push](https://github.com/holesch/salty-stun/actions/workflows/on-push.yml/badge.svg)](https://github.com/holesch/salty-stun/actions/workflows/on-push.yml)

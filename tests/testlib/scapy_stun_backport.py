@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Simon Holesch <simon@holesch.de>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """
 This includes changes from the PR https://github.com/secdev/scapy/pull/4712.
 Remove this once the PR is merged.

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2024 Simon Holesch <simon@holesch.de>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 #include <arpa/inet.h>
 #include <assert.h>
 #include <endian.h>

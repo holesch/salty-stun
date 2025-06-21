@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 Simon Holesch <simon@holesch.de>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 BasedOnStyle: LLVM
 
 # Increase indentation from 2 to 4 spaces

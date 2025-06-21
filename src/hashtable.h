@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Simon Holesch <simon@holesch.de>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 #ifndef HASHTABLE_H_
 #define HASHTABLE_H_
 

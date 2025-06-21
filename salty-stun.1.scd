@@ -1,5 +1,8 @@
 salty-stun(1)
 
+; SPDX-FileCopyrightText: 2025 Simon Holesch <simon@holesch.de>
+; SPDX-License-Identifier: AGPL-3.0-or-later
+
 # NAME
 
 salty-stun - STUN server for WireGuard®

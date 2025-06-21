@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2024 Simon Holesch <simon@holesch.de>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 #ifndef LOG_H_
 #define LOG_H_
 
