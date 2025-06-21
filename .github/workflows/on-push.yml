@@ -42,3 +42,7 @@ jobs:
       - name: Test
         run: |
           meson test -C builddir --print-errorlogs
+      - name: Build release
+        run: |
+          meson setup --werror -Dtests=disabled -Ddocs=disabled --buildtype=release builddir-release
+          meson compile -C builddir-release
