@@ -18,9 +18,16 @@
 #include "args.h"
 #include "log.h"
 #include "packet.h"
+#include "stun/stun.h"
 #include "wireguard/state_mem.h"
 #include "wireguard/wireguard.h"
 
+typedef int (*handle_request_func)(void *layer, struct context *ctx);
+
+static int handle_message_loop(
+        int sockfd, void *layer, handle_request_func handle_request);
+static int handle_wireguard(void *layer, struct context *ctx);
+static int handle_stun(void *layer, struct context *ctx);
 static int create_udp_server(uint16_t port);
 static time_t now_func(void);
 static int handle_add_fake_time_request(struct packet *request);
@@ -48,6 +55,17 @@ int main(int argc, char *argv[]) {
     log_init(args.level);
 
     setup_signal_handling();
+
+    int sockfd = args.sockfd;
+    if (sockfd == -1) {
+        sockfd = create_udp_server(args.port);
+        log_info("Listening on port %d", args.port);
+    }
+
+    if (args.plain) {
+        log_info("Serving plain STUN requests");
+        return handle_message_loop(sockfd, NULL, handle_stun);
+    }
 
     hashtable_init();
 
@@ -97,12 +115,11 @@ int main(int argc, char *argv[]) {
     struct wireguard wg;
     wireguard_init(&wg, args.private_key, args.key_log, state, now_func, &rate_limiter);
 
-    int sockfd = args.sockfd;
-    if (sockfd == -1) {
-        sockfd = create_udp_server(args.port);
-        log_info("Listening on port %d", args.port);
-    }
+    return handle_message_loop(sockfd, &wg, handle_wireguard);
+}
 
+static int handle_message_loop(
+        int sockfd, void *layer, handle_request_func handle_request) {
     static ALIGNED_BUFFER(request_buffer, 4096);
     static ALIGNED_BUFFER(response_buffer, 4096);
     struct context ctx;
@@ -146,7 +163,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        int err = wireguard_handle_request(&wg, &ctx);
+        int err = handle_request(layer, &ctx);
         if (!err && ctx.response.len != 0) {
             send_message(sockfd, ctx.response.head, ctx.response.len,
                     (struct sockaddr *)&ctx.outer_remote_addr, src_addr_len);
@@ -161,6 +178,16 @@ int main(int argc, char *argv[]) {
     }
 
     return 0;
+}
+
+static int handle_wireguard(void *layer, struct context *ctx) {
+    struct wireguard *wg = (struct wireguard *)layer;
+    return wireguard_handle_request(wg, ctx);
+}
+
+static int handle_stun(void *layer, struct context *ctx) {
+    (void)layer;
+    return stun_handle_request(ctx);
 }
 
 static int create_udp_server(uint16_t port) {
@@ -202,8 +229,7 @@ static time_t now_func(void) {
 static int handle_add_fake_time_request(struct packet *request) {
 #ifdef TEST
     struct add_fake_time_request {
-        uint8_t type;
-        uint8_t reserved[3];
+        uint32_t type;
         uint32_t fake_time;
     } *req = packet_peak_head(request, sizeof(*req));
     if (!req || req->type != 0) {

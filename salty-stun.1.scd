@@ -24,7 +24,8 @@ NATs.
 	Show version information and exit.
 
 *-p* _port_
-	Listen on UDP port _port_ (default 51820).
+	Listen on UDP port _port_. The default port is 51820 or 3478 if running in
+	plain STUN mode (see *-P*).
 
 *-k* _key_file_
 	Read the private key from _key_file_. The key must be encoded in base64. By
@@ -45,6 +46,10 @@ NATs.
 *-f* _fd_
 	Accept incoming connections on file descriptor _fd_ instead of creating a
 	new socket.
+
+*-P*
+	Run in plain STUN mode: do not use WireGuard for transport. This is useful
+	when you want to use *salty-stun* as a regular STUN server.
 
 # EXAMPLE
 

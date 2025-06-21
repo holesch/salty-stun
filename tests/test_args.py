@@ -25,7 +25,8 @@ class ArgsRunner:
             level=int(lines[2]),
             max_sessions=int(lines[3]),
             sockfd=int(lines[4]),
-            stdout=lines[5:],
+            plain=lines[5] == "1",
+            stdout=lines[6:],
         )
 
     def run(self, *args, input_=None):
@@ -58,6 +59,7 @@ class Args:
     max_sessions: int
     stdout: list[str]
     sockfd: int
+    plain: bool
 
 
 @pytest.fixture
@@ -73,6 +75,7 @@ def test_default_values(args_runner):
     assert args.max_sessions == 1024
     assert args.sockfd == -1
     assert args.stdout == []
+    assert args.plain == False
 
 
 def test_help(args_runner):
@@ -102,6 +105,7 @@ def test_args(args_runner):
         "42",
         "-f",
         "3",
+        "-P",
         input_=DUMMY_PUBLIC_KEY_B64,
     )
     assert args.port == 1234
@@ -110,6 +114,7 @@ def test_args(args_runner):
     assert args.max_sessions == 42
     assert args.sockfd == 3
     assert args.stdout == ["key log"]
+    assert args.plain == True
 
 
 def test_key_log_file(args_runner):

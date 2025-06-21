@@ -1,6 +1,7 @@
 #ifndef ARGS_H_
 #define ARGS_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "log.h"
@@ -13,6 +14,7 @@ struct args {
     enum log_level level;
     size_t max_sessions;
     int sockfd;
+    bool plain;
 };
 
 void parse_args(int argc, char *argv[], struct args *args);
