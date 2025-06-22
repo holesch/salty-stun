@@ -56,6 +56,7 @@ m_dep = cc.find_library('m', required: false)
 
 version_data = configuration_data()
 version_data.set_quoted('SALTY_STUN_VERSION', meson.project_version())
+version_data.set_quoted('SALTY_STUN_SOURCE_URL', get_option('source_url'))
 configure_file(output: 'version.h', configuration: version_data)
 config_dir = include_directories('.')
 
