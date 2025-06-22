@@ -16,30 +16,30 @@ magic_cookie_param = pytest.mark.parametrize(
 
 
 @magic_cookie_param
-def test_stun(wireguard_session, magic_cookie):
-    stun_request(wireguard_session, magic_cookie)
+def test_stun(wireguard_session, magic_cookie, software_attribute):
+    stun_request(wireguard_session, magic_cookie, software_attribute)
 
 
 @magic_cookie_param
-def test_stun_ipv6(salty_stun, magic_cookie):
+def test_stun_ipv6(salty_stun, magic_cookie, software_attribute):
     with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sock:
         sock.connect(("::1", salty_stun.port))
         with testlib.WireGuardSession(salty_stun.public_key, sock) as wg:
-            stun_request(wg, magic_cookie)
+            stun_request(wg, magic_cookie, software_attribute)
 
 
 @magic_cookie_param
-def test_listening_on_ipv4(pytestconfig, magic_cookie):
+def test_listening_on_ipv4(pytestconfig, magic_cookie, software_attribute):
     builddir = pytestconfig.getoption("builddir")
     with testlib.SaltyStun(
         builddir / "salty-stun-test", port=5300, address_family="IPv4"
     ) as salty_stun, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.connect(("localhost", salty_stun.port))
         with testlib.WireGuardSession(salty_stun.public_key, sock) as wg:
-            stun_request(wg, magic_cookie)
+            stun_request(wg, magic_cookie, software_attribute)
 
 
-def stun_request(wireguard_session, magic_cookie):
+def stun_request(wireguard_session, magic_cookie, software_attribute):
     tid = 0x36CAE9CFAB693C4320467127
 
     request = (
@@ -59,13 +59,19 @@ def stun_request(wireguard_session, magic_cookie):
     address_family = "IPv6" if ":" in local_addr else "IPv4"
 
     if magic_cookie == scapy_stun.MAGIC_COOKIE:
-        expected_attribute = scapy_stun.STUNXorMappedAddress(
-            address_family=address_family, xport=local_port, xip=local_addr
-        )
+        expected_attributes = [
+            scapy_stun.STUNXorMappedAddress(
+                address_family=address_family, xport=local_port, xip=local_addr
+            ),
+        ]
     else:
-        expected_attribute = scapy_stun.STUNMappedAddress(
-            address_family=address_family, port=local_port, ip=local_addr
-        )
+        expected_attributes = [
+            scapy_stun.STUNMappedAddress(
+                address_family=address_family, port=local_port, ip=local_addr
+            ),
+        ]
+
+    expected_attributes.append(software_attribute)
 
     expected_response = (
         scapy.IP(id=0)
@@ -74,7 +80,7 @@ def stun_request(wireguard_session, magic_cookie):
             stun_message_type="Binding success response",
             magic_cookie=magic_cookie,
             transaction_id=tid,
-            attributes=[expected_attribute],
+            attributes=expected_attributes,
         )
     )
     expected_response = scapy.IP(scapy.raw(expected_response))

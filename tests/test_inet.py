@@ -127,14 +127,17 @@ def test_udp_wrong_checksum(wireguard_session):
     assert not response
 
 
-def test_udp_checksum_not_zero(wireguard_session):
+def test_udp_checksum_not_zero(wireguard_session, software_attribute):
     """
     If the UDP checksum result is zero by chance, it should be set to 0xFFFF.
     """
 
     local_addr, local_port = wireguard_session.local_address
 
-    expected_attribute = scapy_stun.STUNMappedAddress(port=local_port, ip=local_addr)
+    expected_attributes = [
+        scapy_stun.STUNMappedAddress(port=local_port, ip=local_addr),
+        software_attribute,
+    ]
 
     tmp_response = (
         scapy.IP(id=0)
@@ -143,7 +146,7 @@ def test_udp_checksum_not_zero(wireguard_session):
             stun_message_type="Binding success response",
             magic_cookie=0,
             transaction_id=0,
-            attributes=[expected_attribute],
+            attributes=expected_attributes,
         )
     )
     tmp_response = scapy.IP(scapy.raw(tmp_response))
@@ -169,7 +172,7 @@ def test_udp_checksum_not_zero(wireguard_session):
             stun_message_type="Binding success response",
             magic_cookie=0,
             transaction_id=tid,
-            attributes=[expected_attribute],
+            attributes=expected_attributes,
         )
     )
     expected_response = scapy.IP(scapy.raw(expected_response))
@@ -238,7 +241,7 @@ def test_icmpv6_wrong_checksum(wireguard_session):
     assert not response
 
 
-def test_udp_ipv6(wireguard_session):
+def test_udp_ipv6(wireguard_session, software_attribute):
     tid = 0x36CAE9CFAB693C4320467127
 
     request = (
@@ -254,9 +257,10 @@ def test_udp_ipv6(wireguard_session):
     response = wireguard_session.request(request)
 
     local_addr, local_port = wireguard_session.local_address
-    expected_attribute = scapy_stun.STUNXorMappedAddress(
-        xport=local_port, xip=local_addr
-    )
+    expected_attributes = [
+        scapy_stun.STUNXorMappedAddress(xport=local_port, xip=local_addr),
+        software_attribute,
+    ]
 
     expected_response = (
         scapy.IPv6()
@@ -264,7 +268,7 @@ def test_udp_ipv6(wireguard_session):
         / scapy_stun.STUN(
             stun_message_type="Binding success response",
             transaction_id=tid,
-            attributes=[expected_attribute],
+            attributes=expected_attributes,
         )
     )
     expected_response = scapy.IPv6(scapy.raw(expected_response))

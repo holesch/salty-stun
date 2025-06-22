@@ -56,6 +56,7 @@ m_dep = cc.find_library('m', required: false)
 
 version_data = configuration_data()
 version_data.set_quoted('SALTY_STUN_VERSION', meson.project_version())
+version_data.set_quoted('SALTY_STUN_SOURCE_URL', get_option('source_url'))
 configure_file(output: 'version.h', configuration: version_data)
 config_dir = include_directories('.')
 
@@ -121,11 +122,19 @@ if pytest.found()
         dependencies: [sodium_dep],
     )
 
+    print_software_exe = executable('print-software', 'tests/print_software.c')
+
     test(
         'salty-stun-test',
         pytest,
         args: ['--exitfirst', '--builddir=' + meson.current_build_dir()],
-        depends: [salty_stun_test_exe, test_log_exe, test_args_exe],
+        depends: [
+            salty_stun_test_exe,
+            test_log_exe,
+            test_args_exe,
+            test_rate_limit_exe,
+            print_software_exe,
+        ],
         workdir: meson.current_source_dir(),
     )
 endif

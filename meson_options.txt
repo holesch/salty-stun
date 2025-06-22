@@ -4,3 +4,5 @@
 
 option('docs', type: 'feature', value: 'auto', description: 'Generate and install man page')
 option('tests', type: 'feature', value: 'auto', description: 'Enable tests')
+option('source_url', type: 'string', value: 'https://github.com/holesch/salty-stun',
+    description: 'URL to the source code repository or tarball')

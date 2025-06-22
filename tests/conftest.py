@@ -4,9 +4,11 @@
 
 import pathlib
 import socket
+import subprocess
 
 import pytest
 import testlib
+import testlib.scapy_stun_backport as scapy_stun
 
 
 def pytest_addoption(parser, pluginmanager):  # noqa: ARG001
@@ -16,6 +18,18 @@ def pytest_addoption(parser, pluginmanager):  # noqa: ARG001
         type=pathlib.Path,
         help="Path to the build directory",
     )
+
+
+@pytest.fixture(scope="session")
+def software_attribute(pytestconfig):
+    builddir = pytestconfig.getoption("builddir")
+    software_string = subprocess.run(
+        [builddir / "print-software"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return scapy_stun.STUNGenericTlv(type=0x8022, value=software_string.encode("utf-8"))
 
 
 @pytest.fixture(scope="session")

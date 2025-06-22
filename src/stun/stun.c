@@ -14,6 +14,7 @@
 #include "context.h"
 #include "log.h"
 #include "packet.h"
+#include "version.h"
 
 enum {
     STUN_MAGIC_COOKIE = 0x2112A442,
@@ -69,8 +70,12 @@ static void fill_mapped_address_v4(
         struct context *ctx, struct sockaddr_in *addr, struct stun_packet *req);
 static void fill_mapped_address_v6(
         struct context *ctx, struct sockaddr_in6 *addr, struct stun_packet *req);
+static void fill_software(struct context *ctx);
 static void log_request_v4(const char *protocol_type, const struct sockaddr_in *addr);
 static void log_request_v6(const char *protocol_type, const struct sockaddr_in6 *addr);
+
+static const char SOFTWARE[] =
+        "salty-stun " SALTY_STUN_VERSION " (" SALTY_STUN_SOURCE_URL ")";
 
 int stun_handle_request(struct context *ctx) {
     struct stun_packet *req = packet_pop_head(&ctx->request, sizeof(*req));
@@ -90,10 +95,20 @@ int stun_handle_request(struct context *ctx) {
     }
 
     packet_reserve(&ctx->response, sizeof(struct stun_packet));
+    struct packet response_attributes = ctx->response;
 
     fill_mapped_address(ctx, req);
 
     size_t content_len = ctx->response.len;
+    ctx->response = response_attributes;
+    packet_pop_head(&ctx->response, content_len);
+
+    fill_software(ctx);
+
+    content_len += ctx->response.len;
+    ctx->response = response_attributes;
+    packet_set_len(&ctx->response, content_len);
+
     struct stun_packet *resp = packet_push_head(&ctx->response, sizeof(*resp));
 
     resp->type = htobe16(STUN_TYPE_BINDING_RESPONSE);
@@ -178,6 +193,19 @@ static void fill_mapped_address_v6(
                 sizeof(mapped_address->address));
         log_request_v6("classic STUN", addr);
     }
+}
+
+static void fill_software(struct context *ctx) {
+    size_t software_len = sizeof(SOFTWARE) - 1;
+    struct stun_attr *attr =
+            packet_set_len(&ctx->response, sizeof(*attr) + software_len);
+
+    attr->type = htobe16(STUN_ATTR_SOFTWARE);
+    attr->length = htobe16(software_len);
+
+    memcpy(attr->data, SOFTWARE, software_len);
+
+    packet_pad(&ctx->response, sizeof(uint32_t));
 }
 
 static void log_request_v4(const char *protocol_type, const struct sockaddr_in *addr) {

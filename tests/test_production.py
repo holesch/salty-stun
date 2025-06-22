@@ -49,7 +49,7 @@ def wg_session(pytestconfig):
             proc.terminate()
 
 
-def test_production_stun(wg_session):
+def test_production_stun(wg_session, software_attribute):
     request = (
         scapy.IP() / scapy.UDP() / scapy_stun.STUN(stun_message_type="Binding request")
     )
@@ -57,9 +57,10 @@ def test_production_stun(wg_session):
     response = wg_session.request(request)
 
     local_addr, local_port = wg_session.local_address
-    expected_attribute = scapy_stun.STUNXorMappedAddress(
-        xport=local_port, xip=local_addr
-    )
+    expected_attributes = [
+        scapy_stun.STUNXorMappedAddress(xport=local_port, xip=local_addr),
+        software_attribute,
+    ]
 
     expected_response = (
         scapy.IP(id=0)
@@ -67,7 +68,7 @@ def test_production_stun(wg_session):
         / scapy_stun.STUN(
             stun_message_type="Binding success response",
             transaction_id=request.transaction_id,
-            attributes=[expected_attribute],
+            attributes=expected_attributes,
         )
     )
     expected_response = scapy.IP(scapy.raw(expected_response))
@@ -104,7 +105,7 @@ def plain_stun_sock(pytestconfig):
             proc.terminate()
 
 
-def test_production_plain(plain_stun_sock):
+def test_production_plain(plain_stun_sock, software_attribute):
     request = scapy_stun.STUN(stun_message_type="Binding request")
     request = scapy_stun.STUN(scapy.raw(request))
     plain_stun_sock.send(bytes(request))
@@ -112,14 +113,15 @@ def test_production_plain(plain_stun_sock):
     response = scapy_stun.STUN(response)
 
     local_addr, local_port = plain_stun_sock.getsockname()[:2]
-    expected_attribute = scapy_stun.STUNXorMappedAddress(
-        xport=local_port, xip=local_addr
-    )
+    expected_attributes = [
+        scapy_stun.STUNXorMappedAddress(xport=local_port, xip=local_addr),
+        software_attribute,
+    ]
 
     expected_response = scapy_stun.STUN(
         stun_message_type="Binding success response",
         transaction_id=request.transaction_id,
-        attributes=[expected_attribute],
+        attributes=expected_attributes,
     )
     expected_response = scapy_stun.STUN(scapy.raw(expected_response))
 
