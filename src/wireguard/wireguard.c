@@ -289,7 +289,10 @@ static int wireguard_handle_handshake(struct wireguard *wg, struct context *ctx)
     // Hi := Hash(Hi ‖ msg.timestamp)
     hash_mix(hash, req->timestamp_tagged, sizeof(req->timestamp_tagged));
 
-    // TODO check timestamp
+    // The timestamp is included in the message to prevent replay attacks. We
+    // would need to store the greatest timestamp received per peer and reject
+    // messages with an older or equal timestamp. Since the effect of a replay
+    // attack is comparable to a TCP reset attack, it's not worth the effort.
 
     struct handshake_response *resp = packet_set_len(&ctx->response, sizeof(*resp));
     resp->type = htole32(WG_TYPE_RESPONSE);
