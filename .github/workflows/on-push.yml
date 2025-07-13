@@ -52,3 +52,36 @@ jobs:
         run: |
           meson setup --werror -Dtests=disabled -Ddocs=disabled --buildtype=release builddir-release
           meson compile -C builddir-release
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install \
+            libb2-dev \
+            libsodium-dev \
+            meson \
+            python3-pip \
+            scdoc \
+            wireguard-tools \
+            ;
+          pip install -r requirements.txt
+      - name: Create tarball
+        run: |
+          meson setup --werror -Dtests=enabled -Ddocs=enabled builddir
+          meson compile -C builddir
+          meson dist -C builddir
+      - name: Create release
+        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="$(./scripts/get_version)"
+          gh release create \
+            --title "${{ github.ref_name }}" \
+            "${{ github.ref_name }}" \
+            "builddir/meson-dist/salty-stun-$version.tar.xz"
