@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import scapy.all as scapy
-import testlib.scapy_stun_backport as scapy_stun
+import scapy.contrib.stun as scapy_stun
 
 
 def test_ping(wireguard_session):

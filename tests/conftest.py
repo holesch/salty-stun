@@ -7,8 +7,8 @@ import socket
 import subprocess
 
 import pytest
+import scapy.contrib.stun as scapy_stun
 import testlib
-import testlib.scapy_stun_backport as scapy_stun
 
 
 def pytest_addoption(parser, pluginmanager):  # noqa: ARG001

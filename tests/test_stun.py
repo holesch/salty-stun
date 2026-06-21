@@ -6,8 +6,8 @@ import socket
 
 import pytest
 import scapy.all as scapy
+import scapy.contrib.stun as scapy_stun
 import testlib
-import testlib.scapy_stun_backport as scapy_stun
 
 # requests without the magic cookie are considered classic STUN (RFC 3489)
 magic_cookie_param = pytest.mark.parametrize(

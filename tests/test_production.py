@@ -8,8 +8,8 @@ import subprocess
 
 import pytest
 import scapy.all as scapy
+import scapy.contrib.stun as scapy_stun
 import testlib
-import testlib.scapy_stun_backport as scapy_stun
 
 
 @pytest.fixture(scope="module")
